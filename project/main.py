@@ -1,16 +1,16 @@
 import numpy as np
 import pygame
-from boids_logic import Boid, BoidModel, Migrator
+from boids_logic import BoidModel, Migrator, GRID_SIZE
 from environment import Obstacle
 
 SCREEN_W, SCREEN_H = 1600, 900
-WORLD_W, WORLD_H = SCREEN_W * 3, SCREEN_H * 3
+WORLD_W, WORLD_H = SCREEN_W * 2, SCREEN_H * 2
 
 def main():
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
     clock = pygame.time.Clock()
-    model = BoidModel(240, WORLD_W, WORLD_H, num_obstacles=35)
+    model = BoidModel(160, WORLD_W, WORLD_H, num_obstacles=35)
 
     cam_x, cam_y = 0, 0
     zoom = 1.0
@@ -42,23 +42,33 @@ def main():
             pygame.draw.rect(screen, (60, 60, 70), draw_rect)
             pygame.draw.rect(screen, (100, 100, 110), draw_rect, 2)
 
-        for agent in model.agents:
-            if isinstance(agent, Migrator):
-                if agent.pos is not None:
-                    rx = (agent.pos[0] - cam_x) * zoom
-                    ry = (agent.pos[1] - cam_y) * zoom
-                    
-                    if -50 <= rx <= SCREEN_W + 50 and -50 <= ry <= SCREEN_H + 50:
-                        size = 8 * zoom
-                        vel = agent.velocity
-                        speed = np.linalg.norm(vel)
-                        if speed > 0:
-                            angle = np.arctan2(vel[1], vel[0])
-                            p1 = (rx + np.cos(angle) * size, ry + np.sin(angle) * size)
-                            p2 = (rx + np.cos(angle + 2.5) * size/2, ry + np.sin(angle + 2.5) * size/2)
-                            p3 = (rx + np.cos(angle - 2.5) * size/2, ry + np.sin(angle - 2.5) * size/2)
-                            pygame.draw.polygon(screen, (0, 255, 200), [p1, p2, p3])
+        for r in range(model.rows):
+            for c in range(model.cols):
+                cost = model.terrain_map[r][c]
+                if cost > 5.0: color = (80, 70, 60)
+                elif cost > 2.0: color = (34, 139, 34)
+                else: color = (144, 238, 144)
 
+                rect = pygame.Rect((c*GRID_SIZE - cam_x)*zoom, (r*GRID_SIZE - cam_y)*zoom, 
+                                GRID_SIZE*zoom + 1, GRID_SIZE*zoom + 1)
+                pygame.draw.rect(screen, color, rect)
+
+        for agent in model.agents:
+            if isinstance(agent, Migrator) and agent.pos is not None:
+                rx = (agent.pos[0] - cam_x) * zoom
+                ry = (agent.pos[1] - cam_y) * zoom
+                
+                if -50 <= rx <= SCREEN_W + 50 and -50 <= ry <= SCREEN_H + 50:
+                    size = 8 * zoom
+                    vel = agent.velocity
+                    speed = np.linalg.norm(vel)
+                    
+                    angle = np.arctan2(vel[1], vel[0]) if speed > 0 else 0.0
+                    
+                    p1 = (rx + np.cos(angle) * size, ry + np.sin(angle) * size)
+                    p2 = (rx + np.cos(angle + 2.5) * size/2, ry + np.sin(angle + 2.5) * size/2)
+                    p3 = (rx + np.cos(angle - 2.5) * size/2, ry + np.sin(angle - 2.5) * size/2)
+                    pygame.draw.polygon(screen, (0, 255, 200), [p1, p2, p3])
         pygame.display.flip()
         clock.tick(60)
 
