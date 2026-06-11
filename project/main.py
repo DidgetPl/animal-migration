@@ -1,7 +1,6 @@
 import numpy as np
 import pygame
-from boids_logic import BoidModel, Migrator, GRID_SIZE
-from environment import Obstacle
+from boids_logic import GRID_SIZE, BoidModel, Migrator
 
 SCREEN_W, SCREEN_H = 1600, 900
 WORLD_W, WORLD_H = SCREEN_W * 2, SCREEN_H * 2
@@ -57,14 +56,14 @@ def main():
             if isinstance(agent, Migrator) and agent.pos is not None:
                 rx = (agent.pos[0] - cam_x) * zoom
                 ry = (agent.pos[1] - cam_y) * zoom
-                
+
                 if -50 <= rx <= SCREEN_W + 50 and -50 <= ry <= SCREEN_H + 50:
                     size = 8 * zoom
                     vel = agent.velocity
                     speed = np.linalg.norm(vel)
-                    
+
                     angle = np.arctan2(vel[1], vel[0]) if speed > 0 else 0.0
-                    
+
                     p1 = (rx + np.cos(angle) * size, ry + np.sin(angle) * size)
                     p2 = (rx + np.cos(angle + 2.5) * size/2, ry + np.sin(angle + 2.5) * size/2)
                     p3 = (rx + np.cos(angle - 2.5) * size/2, ry + np.sin(angle - 2.5) * size/2)

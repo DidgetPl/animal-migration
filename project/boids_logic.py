@@ -1,9 +1,8 @@
 import numpy as np
-from environment import MazeGenerator, Obstacle
 from mesa import Agent, Model
 from mesa.space import ContinuousSpace
-from pathfinding import astar
 from noise import pnoise2
+from pathfinding import astar
 
 GRID_SIZE = 30
 
