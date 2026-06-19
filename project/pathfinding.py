@@ -43,5 +43,5 @@ def astar(grid, start, goal, limit=20000):
                     g_score[neighbor] = tentative_g
                     f_score = tentative_g + get_distance(neighbor, goal)
                     heapq.heappush(open_set, (f_score, neighbor))
-                    
+
     return None

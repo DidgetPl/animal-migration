@@ -101,10 +101,11 @@ class BoidModel(Model):
         self.width, self.height = width, height
         self.space = ContinuousSpace(width, height, False)
         self.grid_to_remove = []
-        
+
         self.rows = height // GRID_SIZE
         self.cols = width // GRID_SIZE
         self.terrain_map = np.zeros((self.rows, self.cols))
+        self.terrain_height = np.zeros((self.rows, self.cols))
         scale = 10.0
         octaves = 4
         seed = self.random.randint(0, 1000)
@@ -117,6 +118,8 @@ class BoidModel(Model):
                 if val > 0.65: self.terrain_map[i][j] = 10.0
                 elif val > 0.55: self.terrain_map[i][j] = 5.0
                 else: self.terrain_map[i][j] = 1.0
+
+                self.terrain_height[i][j] = val
 
         self.obstacles = [] 
 

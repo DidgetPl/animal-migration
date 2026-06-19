@@ -43,13 +43,32 @@ def main():
 
         for r in range(model.rows):
             for c in range(model.cols):
-                cost = model.terrain_map[r][c]
-                if cost > 5.0: color = (80, 70, 60)
-                elif cost > 2.0: color = (34, 139, 34)
-                else: color = (144, 238, 144)
+                val = model.terrain_height[r][c]
+                
+                if val > 0.65:
+                    factor = (val - 0.65) / (1.0 - 0.65)
+                    c_low = pygame.Color(110, 100, 90)
+                    c_high = pygame.Color(45, 40, 35)
+                    color = c_low.lerp(c_high, factor)
+                    
+                elif val > 0.55:
+                    factor = (val - 0.55) / (0.65 - 0.55)
+                    c_low = pygame.Color(45, 150, 45)
+                    c_high = pygame.Color(20, 75, 20)
+                    color = c_low.lerp(c_high, factor)
+                    
+                else:
+                    factor = val / 0.55
+                    c_low = pygame.Color(185, 245, 185)
+                    c_high = pygame.Color(115, 215, 115)
+                    color = c_low.lerp(c_high, factor)
 
-                rect = pygame.Rect((c*GRID_SIZE - cam_x)*zoom, (r*GRID_SIZE - cam_y)*zoom, 
-                                GRID_SIZE*zoom + 1, GRID_SIZE*zoom + 1)
+                rect = pygame.Rect(
+                    (c * GRID_SIZE - cam_x) * zoom, 
+                    (r * GRID_SIZE - cam_y) * zoom, 
+                    GRID_SIZE * zoom + 1, 
+                    GRID_SIZE * zoom + 1
+                )
                 pygame.draw.rect(screen, color, rect)
 
         for agent in model.agents:
