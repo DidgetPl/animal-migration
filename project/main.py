@@ -1,6 +1,6 @@
 import numpy as np
 import pygame
-from boids_logic import GRID_SIZE, BoidModel, Migrator
+from boids_logic import GRID_SIZE, BoidModel, Migrator, Predator
 
 SCREEN_W, SCREEN_H = 1600, 900
 WORLD_W, WORLD_H = SCREEN_W * 2, SCREEN_H * 2
@@ -71,22 +71,37 @@ def main():
                 )
                 pygame.draw.rect(screen, color, rect)
 
+        # Rysowanie agentów
         for agent in model.agents:
-            if isinstance(agent, Migrator) and agent.pos is not None:
+            if agent.pos is not None:
                 rx = (agent.pos[0] - cam_x) * zoom
                 ry = (agent.pos[1] - cam_y) * zoom
-
+                
                 if -50 <= rx <= SCREEN_W + 50 and -50 <= ry <= SCREEN_H + 50:
                     size = 8 * zoom
                     vel = agent.velocity
                     speed = np.linalg.norm(vel)
-
                     angle = np.arctan2(vel[1], vel[0]) if speed > 0 else 0.0
-
-                    p1 = (rx + np.cos(angle) * size, ry + np.sin(angle) * size)
-                    p2 = (rx + np.cos(angle + 2.5) * size/2, ry + np.sin(angle + 2.5) * size/2)
-                    p3 = (rx + np.cos(angle - 2.5) * size/2, ry + np.sin(angle - 2.5) * size/2)
-                    pygame.draw.polygon(screen, (0, 255, 200), [p1, p2, p3])
+                    
+                    if isinstance(agent, Migrator):
+                        # Kolor zależy od strachu: przerażony = pomarańczowy, bezpieczny = turkusowy
+                        color = (255, 140, 0) if getattr(agent, 'scared', False) else (0, 255, 200)
+                        
+                        p1 = (rx + np.cos(angle) * size, ry + np.sin(angle) * size)
+                        p2 = (rx + np.cos(angle + 2.5) * size/2, ry + np.sin(angle + 2.5) * size/2)
+                        p3 = (rx + np.cos(angle - 2.5) * size/2, ry + np.sin(angle - 2.5) * size/2)
+                        pygame.draw.polygon(screen, color, [p1, p2, p3])
+                        
+                    elif isinstance(agent, Predator):
+                        # Drapieżnik: Większy, czerwony trójkąt
+                        p_size = 14 * zoom
+                        p1 = (rx + np.cos(angle) * p_size, ry + np.sin(angle) * p_size)
+                        p2 = (rx + np.cos(angle + 2.3) * p_size/2, ry + np.sin(angle + 2.3) * p_size/2)
+                        p3 = (rx + np.cos(angle - 2.3) * p_size/2, ry + np.sin(angle - 2.3) * p_size/2)
+                        pygame.draw.polygon(screen, (255, 0, 50), [p1, p2, p3])
+                        
+                        # Opcjonalnie: Rysowanie okręgu zasięgu drapieżnika (gdy drgawki/testy)
+                        # pygame.draw.circle(screen, (255, 0, 0), (int(rx), int(ry)), int(agent.detection_radius * zoom), 1)
         pygame.display.flip()
         clock.tick(60)
 
