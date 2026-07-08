@@ -16,6 +16,43 @@ class Migrator(Agent):
         self.velocity = np.array([model.random.uniform(-1, 1), 1.0])
         self.pos = None
         self.scared = False
+        self.ltt_factor = 0.6
+        self.repathed_for_predator = False # Zapobiega ciągłemu przeliczaniu A*
+
+    def recalibrate_path_around_predators(self, predators):
+        """Funkcja przeliczająca nową ścieżkę A* omijającą znanych drapieżników."""
+        if not predators: return
+        
+        # 1. Tworzymy lokalną kopię mapy kosztów
+        danger_map = self.model.terrain_map.copy()
+        
+        # 2. Nakładamy "strefy niebezpieczeństwa" w miejscach, gdzie stoją drapieżniki
+        for p in predators:
+            p_grid_x = int(p.pos[0] // GRID_SIZE)
+            p_grid_y = int(p.pos[1] // GRID_SIZE)
+            
+            # Sztucznie podnosimy koszt obszaru w promieniu np. 3 kafelków od drapieżnika
+            radius = 3
+            for dy in range(-radius, radius + 1):
+                for dx in range(-radius, radius + 1):
+                    nx, ny = p_grid_x + dx, p_grid_y + dy
+                    if 0 <= ny < self.model.rows and 0 <= nx < self.model.cols:
+                        # Koszt rzędu 200.0 sprawia, że A* wybierze prawie każdą okrężną drogę
+                        danger_map[ny][nx] += 200.0
+
+        # 3. Aktualne współrzędne agenta w siatce
+        start_node = (int(self.pos[1] // GRID_SIZE), int(self.pos[0] // GRID_SIZE))
+        goal_node = (self.model.rows - 2, self.model.cols // 2)
+
+        # Zabezpieczenie: upewniamy się, że węzły są przejezdne
+        start_node = (np.clip(start_node[0], 0, self.model.rows - 1), 
+                      np.clip(start_node[1], 0, self.model.cols - 1))
+
+        # 4. Obliczamy nową ścieżkę
+        new_path = astar(danger_map, start_node, goal_node)
+        if new_path:
+            self.path = new_path
+            self.current_target_idx = 0
 
     def step(self):
         if not self.path or self.current_target_idx >= len(self.path):
@@ -30,17 +67,13 @@ class Migrator(Agent):
         terrain_cost = self.model.terrain_map[grid_y][grid_x]
         current_max_speed = self.max_speed * (1.0 / terrain_cost)
 
-        # Pobranie bliskich sąsiadów z ContinuousSpace
-        neighbors = self.model.space.get_neighbors(self.pos, 80, False) # Zwiększamy zasięg dla wykrywania wroga
-        
-        # --- LOGIKA ANTYDRAPIEŻNICZA & EFEKT WIELU OCZU (WYMINANIE) ---
-        predators = [n for n in neighbors if isinstance(n, Predator) and n.is_hunting]
+        neighbors = self.model.space.get_neighbors(self.pos, 80, False)
+        predators = [n for n in neighbors if isinstance(n, Predator)]
         migrator_neighbors = [n for n in neighbors if isinstance(n, Migrator) and n != self]
 
         self.scared = False
         flee_force = np.zeros(2)
 
-        # Pobranie aktualnego celu (współrzędne pikselowe)
         target_grid = self.path[self.current_target_idx]
         target_pos = np.array([
             target_grid[1] * GRID_SIZE + GRID_SIZE/2, 
@@ -49,49 +82,53 @@ class Migrator(Agent):
 
         if predators:
             self.scared = True
+            
+            # WYŚCIG I PRZELICZENIE TRASY: Wykonaj tylko raz przy napotkaniu zagrożenia
+            if not self.repathed_for_predator:
+                self.recalibrate_path_around_predators(predators)
+                self.repathed_for_predator = True
+
             closest_predator = min(predators, key=lambda p: np.linalg.norm(p.pos - self.pos))
             
-            # 1. Główna oś: od drapieżnika do naszego celu
             line_to_target = target_pos - closest_predator.pos
             norm_target = np.linalg.norm(line_to_target)
             
             if norm_target > 0:
                 line_to_target /= norm_target
-                
-                # 2. Tworzymy wektor prostopadły (obrót o 90 stopni: [-y, x])
                 perpendicular = np.array([-line_to_target[1], line_to_target[0]])
                 
-                # 3. Decydujemy, czy skręcamy w lewo, czy w prawo (gdzie agent ma bliżej)
                 agent_vec = self.pos - closest_predator.pos
                 dot_product = np.dot(agent_vec, perpendicular)
                 if dot_product < 0:
-                    perpendicular *= -1 # Zmiana strony, jeśli z drugiej jest luźniej/bliżej
+                    perpendicular *= -1
                 
-                # 4. Łączymy siłę parcia do przodu z mocnym odepchnięciem na bok
-                # Im bliżej drapieżnika, tym silniejszy unik boczny (perpendicular)
                 dist_to_predator = np.linalg.norm(agent_vec)
                 danger_factor = max(0.1, (120.0 - dist_to_predator) / 120.0) if dist_to_predator < 120 else 0.1
                 
-                desired_flee = (line_to_target * 0.4 + perpendicular * 1.2)
+                desired_flee = (line_to_target * self.ltt_factor + perpendicular * 1.1)
                 norm_flee = np.linalg.norm(desired_flee)
                 if norm_flee > 0:
                     desired_flee = (desired_flee / norm_flee) * (current_max_speed * 1.4)
                 
                 flee_force = desired_flee - self.velocity
             
-            # Efekt Wielu Oczu: Przekazujemy stan strachu i lekką siłę skrętu sąsiadom
+            # Przekazujemy alarm sąsiadom
             for n in migrator_neighbors:
                 if np.linalg.norm(n.pos - self.pos) < 60:
                     n.scared = True
-                    n.velocity += flee_force * 0.3  # Podpowiadamy im kierunek uniku
+                    n.velocity += flee_force * 0.3
+                    # Opcjonalnie: sąsiedzi też wyznaczają nową trasę
+                    if not n.repathed_for_predator:
+                        n.recalibrate_path_around_predators(predators)
+                        n.repathed_for_predator = True
+        else:
+            # Gdy brak drapieżników w pobliżu, resetujemy flagę, aby w przyszłości móc zareagować na NOWEGO wroga
+            self.repathed_for_predator = False
 
-        # --- REAKCJA NA ALARM (Sąsiedzi bez bezpośredniego kontaktu wzrokowego) ---
         if self.scared and not predators:
-            # Agent wie o zagrożeniu od stada, zwiększa czujność i ulega wyrównaniu (alignment),
-            # co naturalnie zaciąga go w trajektorię łuku, którą wykonują liderzy z przodu.
             current_max_speed *= 1.2
 
-        # --- STANDARDOWA LOGIKA RUCHU ---
+        # Nawigacja i ruch
         target_grid = self.path[self.current_target_idx]
         target_pos = np.array([
             target_grid[1] * GRID_SIZE + GRID_SIZE/2, 
@@ -107,21 +144,15 @@ class Migrator(Agent):
         desired = (desired / np.linalg.norm(desired)) * current_max_speed
         seek_force = desired - self.velocity
 
-        # Standardowe zachowania stadne
         sep = self.separation(migrator_neighbors) * 2.0  
-        ali = self.alignment(migrator_neighbors) * 1.5  # Zwiększamy wagę, by stado spójnie skręcało
+        ali = self.alignment(migrator_neighbors) * 1.5
         coh = self.cohesion(migrator_neighbors) * 0.6
 
-        # Sumowanie sił: flee_force zawiera już w sobie komponent parcia do przodu (line_to_target)
         if self.scared:
-            # W stanie strachu Seek do konkretnego kafelka A* jest osłabiony, 
-            # bo to flee_force steruje bezpiecznym ominięciem.
             total_force = seek_force * 0.3 + sep + ali + coh + flee_force * 3.5
         else:
-            # Normalny, spokojny marsz po ścieżce A*
             total_force = seek_force + sep + ali + coh
         
-        # Ograniczenia i aplikacja ruchu (zostaje bez zmian)
         if np.linalg.norm(total_force) > self.max_force:
             total_force = (total_force / np.linalg.norm(total_force)) * self.max_force
             
@@ -168,58 +199,44 @@ class Predator(Agent):
         super().__init__(model)
         self.pos = np.array(pos, dtype=float)
         self.velocity = np.array([0.0, 0.0])
-        self.max_speed = 4.5  # Szybszy niż migrujące zwierzęta
+        self.max_speed = 4.5
         self.detection_radius = 150.0
 
-        self.hunger = model.random.uniform(0, 40) # Losowy głód na starcie, by nie polowały naraz
-        self.hunger_rate = 0.15                   # Przyrost głodu na każdy krok (step)
+        self.hunger = model.random.uniform(0, 40)
+        self.hunger_rate = 0.15
         self.is_hunting = False
 
     def step(self):
-        # 1. Zwiększanie głodu z upływem czasu
         self.hunger = min(100.0, self.hunger + self.hunger_rate)
 
-        # 2. Podejmowanie decyzji o polowaniu (Próg głodu)
         if self.hunger > 50.0:
             self.is_hunting = True
         elif self.hunger < 10.0:
-            self.is_hunting = False # Przestaje polować, gdy jest prawie najedzony
+            self.is_hunting = False
 
-        # 3. Logika ruchu w zależności od stanu wewnętrznego
-        if self.is_hunting:
-            # Polowanie: Szukanie ofiar w zasięgu wzroku
-            neighbors = self.model.space.get_neighbors(self.pos, self.detection_radius, False)
-            migrators = [n for n in neighbors if isinstance(n, Migrator)]
+        neighbors = self.model.space.get_neighbors(self.pos, self.detection_radius, False)
+        migrators = [n for n in neighbors if isinstance(n, Migrator)]
 
-            if migrators:
-                # Wybór najbliższej ofiary
-                closest_prey = min(migrators, key=lambda m: np.linalg.norm(m.pos - self.pos))
-                direction = closest_prey.pos - self.pos
-                dist = np.linalg.norm(direction)
+        if migrators and self.is_hunting:
+            closest_prey = min(migrators, key=lambda m: np.linalg.norm(m.pos - self.pos))
+            direction = closest_prey.pos - self.pos
+            dist = np.linalg.norm(direction)
+            
+            if dist > 0:
+                self.velocity = (direction / dist) * self.max_speed
                 
-                if dist > 0:
-                    self.velocity = (direction / dist) * self.max_speed
-                    
-                # Udane polowanie (Zjedzenie ofiary)
-                if dist < 12:
-                    self.model.grid_to_remove.append(closest_prey)
-                    self.hunger = 0.0 # Reset głodu po posiłku
-                    self.is_hunting = False
-                    if self.model.random.random() < 0.05: # Rzadka zmiana kierunku
-                        self.velocity = np.array([self.model.random.uniform(-1, 1), self.model.random.uniform(-1, 1)])
-                        self.velocity = (self.velocity / np.linalg.norm(self.velocity)) * (self.max_speed * 0.3)
-            else:
-                # Jest głodny, ale nikogo nie widzi -> dryfuje lub czatuje
-                if self.model.random.random() < 0.05: # Rzadka zmiana kierunku
+            if dist < 12:
+                self.model.grid_to_remove.append(closest_prey)
+                self.hunger = 0.0
+                self.is_hunting = False
+                if self.model.random.random() < 0.05:
                     self.velocity = np.array([self.model.random.uniform(-1, 1), self.model.random.uniform(-1, 1)])
                     self.velocity = (self.velocity / np.linalg.norm(self.velocity)) * (self.max_speed * 0.3)
         else:
-            # Drapieżnik jest najedzony -> Odpoczywa w miejscu i powoli zwalnia
-            self.velocity *= 0.8
-            if np.linalg.norm(self.velocity) < 0.1:
-                self.velocity = np.array([0.0, 0.0])
+            if self.model.random.random() < 0.05:
+                self.velocity = np.array([self.model.random.uniform(-1, 1), self.model.random.uniform(-1, 1)])
+                self.velocity = (self.velocity / np.linalg.norm(self.velocity)) * (self.max_speed * 0.3)
 
-        # 4. Aktualizacja pozycji
         new_pos = self.pos + self.velocity
         new_pos[0] = np.clip(new_pos[0], 0, self.model.width - 1)
         new_pos[1] = np.clip(new_pos[1], 0, self.model.height - 1)
@@ -252,7 +269,7 @@ class BoidModel(Model):
 
                 self.terrain_height[i][j] = val
 
-        self.obstacles = [] 
+        self.obstacles = []
 
         goal_node = (self.rows - 2, self.cols // 2)
         self.terrain_map[goal_node[0]][goal_node[1]] = 1.0
@@ -285,7 +302,6 @@ class BoidModel(Model):
 
         self.num_predators = 12
         for _ in range(self.num_predators):
-            # Losuj pozycję w środkowej części mapy (żeby nie stali na resorcie startowym ani na mecie)
             rx = self.random.uniform(100, self.width - 100)
             ry = self.random.uniform(self.height * 0.2, self.height * 0.8)
 

@@ -99,9 +99,21 @@ def main():
                         p2 = (rx + np.cos(angle + 2.3) * p_size/2, ry + np.sin(angle + 2.3) * p_size/2)
                         p3 = (rx + np.cos(angle - 2.3) * p_size/2, ry + np.sin(angle - 2.3) * p_size/2)
                         pygame.draw.polygon(screen, (255, 0, 50), [p1, p2, p3])
-                        
-                        # Opcjonalnie: Rysowanie okręgu zasięgu drapieżnika (gdy drgawki/testy)
-                        # pygame.draw.circle(screen, (255, 0, 0), (int(rx), int(ry)), int(agent.detection_radius * zoom), 1)
+        
+        #UI
+        hunting_count = sum(
+            1 for obj in model.agents
+            if getattr(obj, "is_hunting", False)
+        )
+
+        font = pygame.font.SysFont("Arial", 24)
+        text = font.render(
+            f"Polujące drapieżniki: {hunting_count}",
+            True,
+            (255, 255, 255)
+        )
+        screen.blit(text, (20, 20))
+
         pygame.display.flip()
         clock.tick(60)
 
