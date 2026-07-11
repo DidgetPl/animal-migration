@@ -16,43 +16,9 @@ class Migrator(Agent):
         self.velocity = np.array([model.random.uniform(-1, 1), 1.0])
         self.pos = None
         self.scared = False
-        self.ltt_factor = 0.6
-        self.repathed_for_predator = False # Zapobiega ciągłemu przeliczaniu A*
-
-    def recalibrate_path_around_predators(self, predators):
-        """Funkcja przeliczająca nową ścieżkę A* omijającą znanych drapieżników."""
-        if not predators: return
-        
-        # 1. Tworzymy lokalną kopię mapy kosztów
-        danger_map = self.model.terrain_map.copy()
-        
-        # 2. Nakładamy "strefy niebezpieczeństwa" w miejscach, gdzie stoją drapieżniki
-        for p in predators:
-            p_grid_x = int(p.pos[0] // GRID_SIZE)
-            p_grid_y = int(p.pos[1] // GRID_SIZE)
-            
-            # Sztucznie podnosimy koszt obszaru w promieniu np. 3 kafelków od drapieżnika
-            radius = 3
-            for dy in range(-radius, radius + 1):
-                for dx in range(-radius, radius + 1):
-                    nx, ny = p_grid_x + dx, p_grid_y + dy
-                    if 0 <= ny < self.model.rows and 0 <= nx < self.model.cols:
-                        # Koszt rzędu 200.0 sprawia, że A* wybierze prawie każdą okrężną drogę
-                        danger_map[ny][nx] += 200.0
-
-        # 3. Aktualne współrzędne agenta w siatce
-        start_node = (int(self.pos[1] // GRID_SIZE), int(self.pos[0] // GRID_SIZE))
-        goal_node = (self.model.rows - 2, self.model.cols // 2)
-
-        # Zabezpieczenie: upewniamy się, że węzły są przejezdne
-        start_node = (np.clip(start_node[0], 0, self.model.rows - 1), 
-                      np.clip(start_node[1], 0, self.model.cols - 1))
-
-        # 4. Obliczamy nową ścieżkę
-        new_path = astar(danger_map, start_node, goal_node)
-        if new_path:
-            self.path = new_path
-            self.current_target_idx = 0
+        self.predators = []
+        self.last_known_predator_pos = None
+        self.memory_timer = 0
 
     def step(self):
         if not self.path or self.current_target_idx >= len(self.path):
@@ -68,7 +34,7 @@ class Migrator(Agent):
         current_max_speed = self.max_speed * (1.0 / terrain_cost)
 
         neighbors = self.model.space.get_neighbors(self.pos, 80, False)
-        predators = [n for n in neighbors if isinstance(n, Predator)]
+        self.predators = [n for n in neighbors if isinstance(n, Predator)]
         migrator_neighbors = [n for n in neighbors if isinstance(n, Migrator) and n != self]
 
         self.scared = False
@@ -80,16 +46,21 @@ class Migrator(Agent):
             target_grid[0] * GRID_SIZE + GRID_SIZE/2
         ])
 
-        if predators:
-            self.scared = True
-            
-            # WYŚCIG I PRZELICZENIE TRASY: Wykonaj tylko raz przy napotkaniu zagrożenia
-            if not self.repathed_for_predator:
-                self.recalibrate_path_around_predators(predators)
-                self.repathed_for_predator = True
+        look_ahead = min(len(self.path), self.current_target_idx + 8)
+        for idx in range(self.current_target_idx + 1, look_ahead):
+            chk_grid = self.path[idx]
+            chk_pos = np.array([chk_grid[1] * GRID_SIZE + GRID_SIZE/2, chk_grid[0] * GRID_SIZE + GRID_SIZE/2])
+            if np.linalg.norm(chk_pos - self.pos) < 40:
+                self.current_target_idx = idx
+                break
 
-            closest_predator = min(predators, key=lambda p: np.linalg.norm(p.pos - self.pos))
+        if self.predators:
+            self.scared = True
+            closest_predator = min(self.predators, key=lambda p: np.linalg.norm(p.pos - self.pos))
             
+            self.last_known_predator_pos = np.copy(closest_predator.pos)
+            self.memory_timer = 120
+
             line_to_target = target_pos - closest_predator.pos
             norm_target = np.linalg.norm(line_to_target)
             
@@ -102,38 +73,33 @@ class Migrator(Agent):
                 if dot_product < 0:
                     perpendicular *= -1
                 
-                dist_to_predator = np.linalg.norm(agent_vec)
-                danger_factor = max(0.1, (120.0 - dist_to_predator) / 120.0) if dist_to_predator < 120 else 0.1
-                
-                desired_flee = (line_to_target * self.ltt_factor + perpendicular * 1.1)
+                desired_flee = (line_to_target * 0.5 + perpendicular * 1.2)
                 norm_flee = np.linalg.norm(desired_flee)
                 if norm_flee > 0:
                     desired_flee = (desired_flee / norm_flee) * (current_max_speed * 1.4)
                 
                 flee_force = desired_flee - self.velocity
             
-            # Przekazujemy alarm sąsiadom
             for n in migrator_neighbors:
                 if np.linalg.norm(n.pos - self.pos) < 60:
                     n.scared = True
                     n.velocity += flee_force * 0.3
-                    # Opcjonalnie: sąsiedzi też wyznaczają nową trasę
-                    if not n.repathed_for_predator:
-                        n.recalibrate_path_around_predators(predators)
-                        n.repathed_for_predator = True
-        else:
-            # Gdy brak drapieżników w pobliżu, resetujemy flagę, aby w przyszłości móc zareagować na NOWEGO wroga
-            self.repathed_for_predator = False
-
-        if self.scared and not predators:
-            current_max_speed *= 1.2
-
-        # Nawigacja i ruch
-        target_grid = self.path[self.current_target_idx]
-        target_pos = np.array([
-            target_grid[1] * GRID_SIZE + GRID_SIZE/2, 
-            target_grid[0] * GRID_SIZE + GRID_SIZE/2
-        ])
+                    if not n.predators:
+                        n.last_known_predator_pos = np.copy(closest_predator.pos)
+                        n.memory_timer = 90
+        
+        memory_force = np.zeros(2)
+        if not self.predators and self.last_known_predator_pos is not None and self.memory_timer > 0:
+            self.memory_timer -= 1
+            dist_to_danger_zone = np.linalg.norm(self.pos - self.last_known_predator_pos)
+            
+            if dist_to_danger_zone < 130:
+                diff = self.pos - self.last_known_predator_pos
+                if dist_to_danger_zone > 0:
+                    memory_force = (diff / dist_to_danger_zone) * current_max_speed * 1.2
+            else:
+                if self.memory_timer <= 0:
+                    self.last_known_predator_pos = None
 
         dist_to_target = np.linalg.norm(target_pos - self.pos)
         if dist_to_target < 20:
@@ -149,9 +115,9 @@ class Migrator(Agent):
         coh = self.cohesion(migrator_neighbors) * 0.6
 
         if self.scared:
-            total_force = seek_force * 0.3 + sep + ali + coh + flee_force * 3.5
+            total_force = seek_force * 0.2 + sep + ali + coh + flee_force * 3.5
         else:
-            total_force = seek_force + sep + ali + coh
+            total_force = seek_force + sep + ali + coh + memory_force * 2.0
         
         if np.linalg.norm(total_force) > self.max_force:
             total_force = (total_force / np.linalg.norm(total_force)) * self.max_force
