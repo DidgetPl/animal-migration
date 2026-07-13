@@ -1,10 +1,7 @@
 import numpy as np
-from mesa import Agent, Model
-from mesa.space import ContinuousSpace
-from noise import pnoise2
-from pathfinding import astar
+from mesa import Agent
+from variables import GRID_SIZE
 
-GRID_SIZE = 30
 
 class Migrator(Agent):
     def __init__(self, model, path):
@@ -19,6 +16,10 @@ class Migrator(Agent):
         self.predators = []
         self.last_known_predator_pos = None
         self.memory_timer = 0
+
+        self.hunger = model.random.uniform(0, 30)
+        self.hunger_rate = 0.08
+        self.is_feeding = False
 
     def step(self):
         if not self.path or self.current_target_idx >= len(self.path):
@@ -36,6 +37,20 @@ class Migrator(Agent):
         neighbors = self.model.space.get_neighbors(self.pos, 80, False)
         self.predators = [n for n in neighbors if isinstance(n, Predator)]
         migrator_neighbors = [n for n in neighbors if isinstance(n, Migrator) and n != self]
+
+        self.hunger = min(100.0, self.hunger + self.hunger_rate)
+
+        is_fertile_ground = (terrain_cost == 1.0)
+
+        eating_neighbors = [n for n in migrator_neighbors if getattr(n, 'is_feeding', False)]
+        
+        if self.hunger > 40.0 and is_fertile_ground:
+            if self.hunger > 75.0 or len(eating_neighbors) >= 2:
+                self.is_feeding = True
+        
+        if self.hunger <= 0.0:
+            self.hunger = 0.0
+            self.is_feeding = False
 
         self.scared = False
         flee_force = np.zeros(2)
@@ -56,7 +71,11 @@ class Migrator(Agent):
 
         if self.predators:
             self.scared = True
-            closest_predator = min(self.predators, key=lambda p: np.linalg.norm(p.pos - self.pos))
+            self.is_feeding = False
+
+            haunting_predators = [p for p in self.predators if p.is_hunting]
+            closest_predator = min(self.predators if not haunting_predators else haunting_predators,
+                                   key=lambda p: np.linalg.norm(p.pos - self.pos))
             
             self.last_known_predator_pos = np.copy(closest_predator.pos)
             self.memory_timer = 120
@@ -83,6 +102,7 @@ class Migrator(Agent):
             for n in migrator_neighbors:
                 if np.linalg.norm(n.pos - self.pos) < 60:
                     n.scared = True
+                    n.is_feeding = False
                     n.velocity += flee_force * 0.3
                     if not n.predators:
                         n.last_known_predator_pos = np.copy(closest_predator.pos)
@@ -101,6 +121,10 @@ class Migrator(Agent):
                 if self.memory_timer <= 0:
                     self.last_known_predator_pos = None
 
+        if self.is_feeding and not self.scared:
+            current_max_speed *= 0.15 
+            self.hunger = max(0.0, self.hunger - 0.4) 
+
         dist_to_target = np.linalg.norm(target_pos - self.pos)
         if dist_to_target < 20:
             self.current_target_idx += 1
@@ -116,6 +140,8 @@ class Migrator(Agent):
 
         if self.scared:
             total_force = seek_force * 0.2 + sep + ali + coh + flee_force * 3.5
+        elif self.is_feeding:
+            total_force = seek_force * 0.1 + sep * 3.0 + ali * 0.2 + coh * 2.0
         else:
             total_force = seek_force + sep + ali + coh + memory_force * 2.0
         
@@ -159,6 +185,7 @@ class Migrator(Agent):
         if dist > 0:
             desired = (desired / dist) * self.max_speed
         return desired - self.velocity
+
 
 class Predator(Agent):
     def __init__(self, model, pos):
@@ -208,80 +235,3 @@ class Predator(Agent):
         new_pos[1] = np.clip(new_pos[1], 0, self.model.height - 1)
         self.model.space.move_agent(self, new_pos)
         self.pos = new_pos
-
-class BoidModel(Model):
-    def __init__(self, n, width, height, num_obstacles=15):
-        super().__init__()
-        self.width, self.height = width, height
-        self.space = ContinuousSpace(width, height, False)
-        self.grid_to_remove = []
-
-        self.rows = height // GRID_SIZE
-        self.cols = width // GRID_SIZE
-        self.terrain_map = np.zeros((self.rows, self.cols))
-        self.terrain_height = np.zeros((self.rows, self.cols))
-        scale = 10.0
-        octaves = 4
-        seed = self.random.randint(0, 1000)
-        
-        for i in range(self.rows):
-            for j in range(self.cols):
-                noise_val = pnoise2(i/scale, j/scale, octaves=octaves, base=seed)
-                val = (noise_val + 1) / 2
-                
-                if val > 0.65: self.terrain_map[i][j] = 10.0
-                elif val > 0.55: self.terrain_map[i][j] = 5.0
-                else: self.terrain_map[i][j] = 1.0
-
-                self.terrain_height[i][j] = val
-
-        self.obstacles = []
-
-        goal_node = (self.rows - 2, self.cols // 2)
-        self.terrain_map[goal_node[0]][goal_node[1]] = 1.0
-
-        available_starts = np.where(self.terrain_map[2] == 1.0)[0]
-        if len(available_starts) == 0:
-            available_starts = np.where(self.terrain_map[2] < 10.0)[0]
-            
-        possible_nodes = [(2, col) for col in available_starts if 1 < col < self.cols - 2]
-        self.random.shuffle(possible_nodes)
-        nodes_to_use = possible_nodes[:n]
-        path_cache = {}
-
-        for start_node in nodes_to_use:
-            if start_node not in path_cache:
-                path_cache[start_node] = astar(self.terrain_map, start_node, goal_node)
-            
-            path = path_cache[start_node]
-
-            if path:
-                start_pos = np.array([
-                    start_node[1] * GRID_SIZE + GRID_SIZE/2,
-                    start_node[0] * GRID_SIZE + GRID_SIZE/2
-                ])
-                
-                migrator = Migrator(self, path)
-                self.space.place_agent(migrator, start_pos)
-                if migrator not in self.agents:
-                    self.agents.add(migrator)
-
-        self.num_predators = 12
-        for _ in range(self.num_predators):
-            rx = self.random.uniform(100, self.width - 100)
-            ry = self.random.uniform(self.height * 0.2, self.height * 0.8)
-
-            predator = Predator(self, [rx, ry])
-            self.space.place_agent(predator, [rx, ry])
-            self.agents.add(predator)
-
-    def step(self):
-        for agent in self.grid_to_remove:
-            if agent in self.agents:
-                self.space.remove_agent(agent)
-                agent.remove()
-        self.grid_to_remove = []
-
-        for agent in list(self.agents):
-            if isinstance(agent, Migrator) or isinstance(agent, Predator):
-                agent.step()

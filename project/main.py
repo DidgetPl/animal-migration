@@ -1,6 +1,8 @@
 import numpy as np
 import pygame
-from boids_logic import GRID_SIZE, BoidModel, Migrator, Predator
+from boid_model import BoidModel
+from boids_logic import Migrator, Predator
+from variables import GRID_SIZE
 
 SCREEN_W, SCREEN_H = 1600, 900
 WORLD_W, WORLD_H = SCREEN_W * 2, SCREEN_H * 2
@@ -45,20 +47,20 @@ def main():
             for c in range(model.cols):
                 val = model.terrain_height[r][c]
                 
-                if val > 0.65:
-                    factor = (val - 0.65) / (1.0 - 0.65)
+                if val > model.mountain_threshold:
+                    factor = (val - model.mountain_threshold) / (1.0 - model.mountain_threshold)
                     c_low = pygame.Color(110, 100, 90)
                     c_high = pygame.Color(45, 40, 35)
                     color = c_low.lerp(c_high, factor)
                     
-                elif val > 0.55:
-                    factor = (val - 0.55) / (0.65 - 0.55)
+                elif val > model.forest_threshold:
+                    factor = (val - model.forest_threshold) / (model.mountain_threshold - model.forest_threshold)
                     c_low = pygame.Color(45, 150, 45)
                     c_high = pygame.Color(20, 75, 20)
                     color = c_low.lerp(c_high, factor)
                     
                 else:
-                    factor = val / 0.55
+                    factor = val / (model.forest_threshold)
                     c_low = pygame.Color(185, 245, 185)
                     c_high = pygame.Color(115, 215, 115)
                     color = c_low.lerp(c_high, factor)
@@ -71,7 +73,6 @@ def main():
                 )
                 pygame.draw.rect(screen, color, rect)
 
-        # Rysowanie agentów
         for agent in model.agents:
             if agent.pos is not None:
                 rx = (agent.pos[0] - cam_x) * zoom
@@ -84,16 +85,19 @@ def main():
                     angle = np.arctan2(vel[1], vel[0]) if speed > 0 else 0.0
                     
                     if isinstance(agent, Migrator):
-                        # Kolor zależy od strachu: przerażony = pomarańczowy, bezpieczny = turkusowy
-                        color = (255, 140, 0) if getattr(agent, 'scared', False) else (0, 255, 200)
-                        
+                        if getattr(agent, 'scared', False):
+                            color = (255, 140, 0)
+                        elif getattr(agent, 'is_feeding', False):
+                            color = (30, 110, 90)
+                        else:
+                            color = (200, 200, 0)
+
                         p1 = (rx + np.cos(angle) * size, ry + np.sin(angle) * size)
                         p2 = (rx + np.cos(angle + 2.5) * size/2, ry + np.sin(angle + 2.5) * size/2)
                         p3 = (rx + np.cos(angle - 2.5) * size/2, ry + np.sin(angle - 2.5) * size/2)
                         pygame.draw.polygon(screen, color, [p1, p2, p3])
                         
                     elif isinstance(agent, Predator):
-                        # Drapieżnik: Większy, czerwony trójkąt
                         p_size = 14 * zoom
                         p1 = (rx + np.cos(angle) * p_size, ry + np.sin(angle) * p_size)
                         p2 = (rx + np.cos(angle + 2.3) * p_size/2, ry + np.sin(angle + 2.3) * p_size/2)
@@ -101,6 +105,7 @@ def main():
                         pygame.draw.polygon(screen, (255, 0, 50), [p1, p2, p3])
         
         #UI
+        '''
         hunting_count = sum(
             1 for obj in model.agents
             if getattr(obj, "is_hunting", False)
@@ -113,7 +118,7 @@ def main():
             (255, 255, 255)
         )
         screen.blit(text, (20, 20))
-
+        '''
         pygame.display.flip()
         clock.tick(60)
 
