@@ -51,7 +51,7 @@ class Migrator(BaseBoid):
             if self.hunger > 75.0 or len(eating_neighbors) >= 2:
                 self.is_feeding = True
         
-        if self.hunger <= 0.0:
+        if self.hunger <= 1.0:
             self.hunger = 0.0
             self.is_feeding = False
 
@@ -125,7 +125,7 @@ class Migrator(BaseBoid):
                     self.last_known_predator_pos = None
 
         if self.is_feeding and not self.scared:
-            current_max_speed *= 0.15 
+            current_max_speed *= 0.05 
             self.hunger = max(0.0, self.hunger - 0.4) 
 
         dist_to_target = np.linalg.norm(target_pos - self.pos)
