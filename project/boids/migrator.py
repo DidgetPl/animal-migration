@@ -1,9 +1,9 @@
 import numpy as np
-from mesa import Agent
+from boids.base_boid import BaseBoid
 from variables import GRID_SIZE
 
 
-class Migrator(Agent):
+class Migrator(BaseBoid):
     def __init__(self, model, path):
         super().__init__(model)
         self.path = path
@@ -11,7 +11,6 @@ class Migrator(Agent):
         self.max_speed = 3.0
         self.max_force = 0.2
         self.velocity = np.array([model.random.uniform(-1, 1), 1.0])
-        self.pos = None
         self.scared = False
         self.predators = []
         self.last_known_predator_pos = None
@@ -20,6 +19,10 @@ class Migrator(Agent):
         self.hunger = model.random.uniform(0, 30)
         self.hunger_rate = 0.08
         self.is_feeding = False
+
+    @property
+    def is_predator(self) -> bool:
+        return False
 
     def step(self):
         if not self.path or self.current_target_idx >= len(self.path):
@@ -35,11 +38,11 @@ class Migrator(Agent):
         current_max_speed = self.max_speed * (1.0 / terrain_cost)
 
         neighbors = self.model.space.get_neighbors(self.pos, 80, False)
-        self.predators = [n for n in neighbors if isinstance(n, Predator)]
-        migrator_neighbors = [n for n in neighbors if isinstance(n, Migrator) and n != self]
+        
+        self.predators = [n for n in neighbors if getattr(n, 'is_predator', False)]
+        migrator_neighbors = [n for n in neighbors if not getattr(n, 'is_predator', False) and n != self]
 
         self.hunger = min(100.0, self.hunger + self.hunger_rate)
-
         is_fertile_ground = (terrain_cost == 1.0)
 
         eating_neighbors = [n for n in migrator_neighbors if getattr(n, 'is_feeding', False)]
@@ -73,7 +76,7 @@ class Migrator(Agent):
             self.scared = True
             self.is_feeding = False
 
-            haunting_predators = [p for p in self.predators if p.is_hunting]
+            haunting_predators = [p for p in self.predators if getattr(p, 'is_hunting', False)]
             closest_predator = min(self.predators if not haunting_predators else haunting_predators,
                                    key=lambda p: np.linalg.norm(p.pos - self.pos))
             
@@ -185,53 +188,3 @@ class Migrator(Agent):
         if dist > 0:
             desired = (desired / dist) * self.max_speed
         return desired - self.velocity
-
-
-class Predator(Agent):
-    def __init__(self, model, pos):
-        super().__init__(model)
-        self.pos = np.array(pos, dtype=float)
-        self.velocity = np.array([0.0, 0.0])
-        self.max_speed = 4.5
-        self.detection_radius = 150.0
-
-        self.hunger = model.random.uniform(0, 40)
-        self.hunger_rate = 0.15
-        self.is_hunting = False
-
-    def step(self):
-        self.hunger = min(100.0, self.hunger + self.hunger_rate)
-
-        if self.hunger > 50.0:
-            self.is_hunting = True
-        elif self.hunger < 10.0:
-            self.is_hunting = False
-
-        neighbors = self.model.space.get_neighbors(self.pos, self.detection_radius, False)
-        migrators = [n for n in neighbors if isinstance(n, Migrator)]
-
-        if migrators and self.is_hunting:
-            closest_prey = min(migrators, key=lambda m: np.linalg.norm(m.pos - self.pos))
-            direction = closest_prey.pos - self.pos
-            dist = np.linalg.norm(direction)
-            
-            if dist > 0:
-                self.velocity = (direction / dist) * self.max_speed
-                
-            if dist < 12:
-                self.model.grid_to_remove.append(closest_prey)
-                self.hunger = 0.0
-                self.is_hunting = False
-                if self.model.random.random() < 0.05:
-                    self.velocity = np.array([self.model.random.uniform(-1, 1), self.model.random.uniform(-1, 1)])
-                    self.velocity = (self.velocity / np.linalg.norm(self.velocity)) * (self.max_speed * 0.3)
-        else:
-            if self.model.random.random() < 0.05:
-                self.velocity = np.array([self.model.random.uniform(-1, 1), self.model.random.uniform(-1, 1)])
-                self.velocity = (self.velocity / np.linalg.norm(self.velocity)) * (self.max_speed * 0.3)
-
-        new_pos = self.pos + self.velocity
-        new_pos[0] = np.clip(new_pos[0], 0, self.model.width - 1)
-        new_pos[1] = np.clip(new_pos[1], 0, self.model.height - 1)
-        self.model.space.move_agent(self, new_pos)
-        self.pos = new_pos

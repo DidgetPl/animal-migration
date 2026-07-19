@@ -1,7 +1,8 @@
 import numpy as np
 import pygame
 from boid_model import BoidModel
-from boids_logic import Migrator, Predator
+from boids.migrator import Migrator
+from boids.predator import Predator
 from variables import GRID_SIZE
 
 SCREEN_W, SCREEN_H = 1600, 900

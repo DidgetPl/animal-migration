@@ -1,5 +1,6 @@
 import numpy as np
-from boids_logic import Migrator, Predator
+from boids.migrator import Migrator
+from boids.predator import Predator
 from mesa import Model
 from mesa.space import ContinuousSpace
 from noise import snoise2
