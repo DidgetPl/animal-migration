@@ -24,7 +24,10 @@ class BoidModel(Model):
         self.forest_threshold = 0.28
         
         seed = self.random.uniform(0.0, 1000.0)
-        
+
+        self.grass_map = np.ones((self.rows, self.cols), dtype=float)
+        self.grass_regrowth_rate = 0.001
+
         for i in range(self.rows):
             for j in range(self.cols):
                 nx = i / 18.0
@@ -92,6 +95,11 @@ class BoidModel(Model):
             predator = Predator(self, [rx, ry])
             self.space.place_agent(predator, [rx, ry])
             self.agents.add(predator)
+
+    def step_environment(self):
+        self.grass_map = np.clip(
+            self.grass_map + self.grass_regrowth_rate, 0.0, 1.0
+        )
 
     def step(self):
         for agent in self.grid_to_remove:

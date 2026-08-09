@@ -6,7 +6,7 @@ from boids.predator import Predator
 from variables import GRID_SIZE
 
 SCREEN_W, SCREEN_H = 1600, 900
-WORLD_W, WORLD_H = SCREEN_W * 2, SCREEN_H * 2
+WORLD_W, WORLD_H = SCREEN_W * 2, SCREEN_H * 4
 
 def main():
     pygame.init()

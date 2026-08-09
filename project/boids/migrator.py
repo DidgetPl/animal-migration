@@ -16,8 +16,8 @@ class Migrator(BaseBoid):
         self.last_known_predator_pos = None
         self.memory_timer = 0
 
-        self.hunger = model.random.uniform(0, 30)
-        self.hunger_rate = 0.08
+        self.hunger = model.random.uniform(10, 40)
+        self.hunger_rate = 0.035
         self.is_feeding = False
 
     @property
@@ -35,25 +35,40 @@ class Migrator(BaseBoid):
         grid_y = np.clip(grid_y, 0, self.model.rows - 1)
         
         terrain_cost = self.model.terrain_map[grid_y][grid_x]
+        
+        current_grass = getattr(self.model, 'grass_map', np.ones((self.model.rows, self.model.cols)))[grid_y][grid_x]
+        
         current_max_speed = self.max_speed * (1.0 / terrain_cost)
 
         neighbors = self.model.space.get_neighbors(self.pos, 80, False)
-        
         self.predators = [n for n in neighbors if getattr(n, 'is_predator', False)]
         migrator_neighbors = [n for n in neighbors if not getattr(n, 'is_predator', False) and n != self]
 
         self.hunger = min(100.0, self.hunger + self.hunger_rate)
-        is_fertile_ground = (terrain_cost == 1.0)
-
+        is_fertile_ground = (terrain_cost == 1.0) and (current_grass > 0.3)
         eating_neighbors = [n for n in migrator_neighbors if getattr(n, 'is_feeding', False)]
-        
+
+        if self.hunger > 45.0:
+            print(self.hunger)
+
         if self.hunger > 40.0 and is_fertile_ground:
             if self.hunger > 75.0 or len(eating_neighbors) >= 2:
+                print("cosinus")
                 self.is_feeding = True
-        
-        if self.hunger <= 1.0:
-            self.hunger = 0.0
+
+        if self.hunger <= 1.0 or current_grass < 0.15:
             self.is_feeding = False
+            if self.hunger <= 1.0:
+                self.hunger = 0.0
+
+        if self.is_feeding and not self.scared:
+            eaten_amount = min(current_grass, 0.006)
+            if hasattr(self.model, 'grass_map'):
+                self.model.grass_map[grid_y][grid_x] -= eaten_amount
+            
+            nutrition_value = eaten_amount * 45.0
+            self.hunger = max(0.0, self.hunger - nutrition_value)
+            current_max_speed *= 0.1
 
         self.scared = False
         flee_force = np.zeros(2)
@@ -78,7 +93,7 @@ class Migrator(BaseBoid):
 
             haunting_predators = [p for p in self.predators if getattr(p, 'is_hunting', False)]
             closest_predator = min(self.predators if not haunting_predators else haunting_predators,
-                                   key=lambda p: np.linalg.norm(p.pos - self.pos))
+                                key=lambda p: np.linalg.norm(p.pos - self.pos))
             
             self.last_known_predator_pos = np.copy(closest_predator.pos)
             self.memory_timer = 120
@@ -124,17 +139,14 @@ class Migrator(BaseBoid):
                 if self.memory_timer <= 0:
                     self.last_known_predator_pos = None
 
-        if self.is_feeding and not self.scared:
-            current_max_speed *= 0.05 
-            self.hunger = max(0.0, self.hunger - 0.4) 
-
         dist_to_target = np.linalg.norm(target_pos - self.pos)
         if dist_to_target < 20:
             self.current_target_idx += 1
             return
 
         desired = (target_pos - self.pos)
-        desired = (desired / np.linalg.norm(desired)) * current_max_speed
+        norm_desired = np.linalg.norm(desired)
+        desired = (desired / norm_desired) * current_max_speed if norm_desired > 0 else np.zeros(2)
         seek_force = desired - self.velocity
 
         sep = self.separation(migrator_neighbors) * 2.0  
@@ -144,7 +156,7 @@ class Migrator(BaseBoid):
         if self.scared:
             total_force = seek_force * 0.2 + sep + ali + coh + flee_force * 3.5
         elif self.is_feeding:
-            total_force = seek_force * 0.1 + sep * 3.0 + ali * 0.2 + coh * 2.0
+            total_force = seek_force * 0.05 + sep * 2.5 + ali * 0.1 + coh * 1.2
         else:
             total_force = seek_force + sep + ali + coh + memory_force * 2.0
         
