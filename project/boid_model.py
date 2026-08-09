@@ -17,7 +17,7 @@ class BoidModel(Model):
 
         self.rows = height // GRID_SIZE
         self.cols = width // GRID_SIZE
-        self.terrain_map = np.zeros((self.rows, self.cols))
+        self.terrain_cost_map = np.zeros((self.rows, self.cols))
         self.terrain_height = np.zeros((self.rows, self.cols))
 
         self.mountain_threshold = 0.56
@@ -53,22 +53,24 @@ class BoidModel(Model):
                 
                 self.terrain_height[i][j] = val
 
-                if val > self.mountain_threshold:
-                    self.terrain_map[i][j] = 7.0
+                if hasattr(self, 'river_map') and self.river_map[i][j]:
+                    self.terrain_cost_map[i][j] = 12.0 #10.0?
+                elif val > self.mountain_threshold:
+                    self.terrain_cost_map[i][j] = 8.0 #7.0
                 elif val > self.forest_threshold:
-                    self.terrain_map[i][j] = 3.5
+                    self.terrain_cost_map[i][j] = 3.5 #3.5
                 else: 
-                    self.terrain_map[i][j] = 1.0
+                    self.terrain_cost_map[i][j] = 1.0 #1.0
 
 
         self.obstacles = []
 
         goal_node = (2, self.cols // 2)
-        self.terrain_map[goal_node[0]][goal_node[1]] = 1.0
+        self.terrain_cost_map[goal_node[0]][goal_node[1]] = 1.0
 
-        available_starts = np.where(self.terrain_map[2] == 1.0)[0]
+        available_starts = np.where(self.terrain_cost_map[2] == 1.0)[0]
         if len(available_starts) == 0:
-            available_starts = np.where(self.terrain_map[2] < 10.0)[0]
+            available_starts = np.where(self.terrain_cost_map[2] < 10.0)[0]
             
         possible_nodes = [(self.rows - 2, col) for col in available_starts if 1 < col < self.cols - 2]
         self.random.shuffle(possible_nodes)
@@ -77,7 +79,7 @@ class BoidModel(Model):
 
         for start_node in nodes_to_use:
             if start_node not in path_cache:
-                path_cache[start_node] = astar(self.terrain_map, start_node, goal_node)
+                path_cache[start_node] = astar(self.terrain_cost_map, start_node, goal_node)
             
             path = path_cache[start_node]
 
@@ -133,4 +135,4 @@ class BoidModel(Model):
         for r in range(self.rows):
             for c in range(self.cols):
                 if self.river_map[r][c]:
-                    self.terrain_map[r][c] = 15.0
+                    self.terrain_cost_map[r][c] = 15.0

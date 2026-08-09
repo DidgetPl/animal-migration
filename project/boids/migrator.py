@@ -24,26 +24,21 @@ class Migrator(BaseBoid):
     def is_predator(self) -> bool:
         return False
 
-    def step(self):
-        if not self.path or self.current_target_idx >= len(self.path):
-            self.model.grid_to_remove.append(self)
-            return
+    def _get_grid_coords(self):
+        gx = int(self.pos[0] // GRID_SIZE)
+        gy = int(self.pos[1] // GRID_SIZE)
+        gx = np.clip(gx, 0, self.model.cols - 1)
+        gy = np.clip(gy, 0, self.model.rows - 1)
+        return gx, gy
 
-        grid_x = int(self.pos[0] // GRID_SIZE)
-        grid_y = int(self.pos[1] // GRID_SIZE)
-        grid_x = np.clip(grid_x, 0, self.model.cols - 1)
-        grid_y = np.clip(grid_y, 0, self.model.rows - 1)
-        
-        terrain_cost = self.model.terrain_map[grid_y][grid_x]
-        
+    def _update_terrain_and_speed(self, grid_x, grid_y):
+        terrain_cost = self.model.terrain_cost_map[grid_y][grid_x]
+        current_max_speed = self.max_speed * (1.0 / terrain_cost)
+        return terrain_cost, current_max_speed
+
+    def _update_hunger_and_feeding(self, grid_x, grid_y, terrain_cost, migrator_neighbors, current_max_speed):
         current_grass = getattr(self.model, 'grass_map', np.ones((self.model.rows, self.model.cols)))[grid_y][grid_x]
         
-        current_max_speed = self.max_speed * (1.0 / terrain_cost)
-
-        neighbors = self.model.space.get_neighbors(self.pos, 80, False)
-        self.predators = [n for n in neighbors if getattr(n, 'is_predator', False)]
-        migrator_neighbors = [n for n in neighbors if not getattr(n, 'is_predator', False) and n != self]
-
         self.hunger = min(100.0, self.hunger + self.hunger_rate)
         is_fertile_ground = (terrain_cost == 1.0) and (current_grass > 0.3)
         eating_neighbors = [n for n in migrator_neighbors if getattr(n, 'is_feeding', False)]
@@ -65,23 +60,19 @@ class Migrator(BaseBoid):
             self.hunger = max(0.0, self.hunger - nutrition_value)
             current_max_speed *= 0.1
 
-        self.scared = False
-        flee_force = np.zeros(2)
+        return current_max_speed
 
+    def _handle_river_effects(self, grid_x, grid_y, current_max_speed):
         is_in_river = getattr(self.model, 'river_map', np.zeros((self.model.rows, self.model.cols)))[grid_y][grid_x]
-
+        
         if is_in_river:
-            current_max_speed *= 0.5
+            current_max_speed = self.max_speed * 0.25
             self.is_feeding = False
-            
-            self.velocity[1] += 0.05
+            self.velocity[1] += 0.03
 
-        target_grid = self.path[self.current_target_idx]
-        target_pos = np.array([
-            target_grid[1] * GRID_SIZE + GRID_SIZE/2,
-            target_grid[0] * GRID_SIZE + GRID_SIZE/2
-        ])
+        return current_max_speed
 
+    def _update_path_target(self, target_pos):
         look_ahead = min(len(self.path), self.current_target_idx + 8)
         for idx in range(self.current_target_idx + 1, look_ahead):
             chk_grid = self.path[idx]
@@ -90,13 +81,18 @@ class Migrator(BaseBoid):
                 self.current_target_idx = idx
                 break
 
+    def _calculate_predator_and_flee_forces(self, target_pos, migrator_neighbors, current_max_speed):
+        flee_force = np.zeros(2)
+
         if self.predators:
             self.scared = True
             self.is_feeding = False
 
             haunting_predators = [p for p in self.predators if getattr(p, 'is_hunting', False)]
-            closest_predator = min(self.predators if not haunting_predators else haunting_predators,
-                                key=lambda p: np.linalg.norm(p.pos - self.pos))
+            closest_predator = min(
+                self.predators if not haunting_predators else haunting_predators,
+                key=lambda p: np.linalg.norm(p.pos - self.pos)
+            )
             
             self.last_known_predator_pos = np.copy(closest_predator.pos)
             self.memory_timer = 120
@@ -128,7 +124,10 @@ class Migrator(BaseBoid):
                     if not n.predators:
                         n.last_known_predator_pos = np.copy(closest_predator.pos)
                         n.memory_timer = 90
-        
+
+        return flee_force
+
+    def _calculate_memory_force(self, current_max_speed):
         memory_force = np.zeros(2)
         if not self.predators and self.last_known_predator_pos is not None and self.memory_timer > 0:
             self.memory_timer -= 1
@@ -142,17 +141,15 @@ class Migrator(BaseBoid):
                 if self.memory_timer <= 0:
                     self.last_known_predator_pos = None
 
-        dist_to_target = np.linalg.norm(target_pos - self.pos)
-        if dist_to_target < 20:
-            self.current_target_idx += 1
-            return
+        return memory_force
 
+    def _apply_movement_and_physics(self, target_pos, migrator_neighbors, flee_force, memory_force, current_max_speed):
         desired = (target_pos - self.pos)
         norm_desired = np.linalg.norm(desired)
         desired = (desired / norm_desired) * current_max_speed if norm_desired > 0 else np.zeros(2)
         seek_force = desired - self.velocity
 
-        sep = self.separation(migrator_neighbors) * 2.0  
+        sep = self.separation(migrator_neighbors) * 2.0
         ali = self.alignment(migrator_neighbors) * 1.5
         coh = self.cohesion(migrator_neighbors) * 0.6
 
@@ -178,6 +175,39 @@ class Migrator(BaseBoid):
 
         self.model.space.move_agent(self, new_pos)
         self.pos = new_pos
+
+    def step(self):
+        if not self.path or self.current_target_idx >= len(self.path):
+            self.model.grid_to_remove.append(self)
+            return
+
+        grid_x, grid_y = self._get_grid_coords()
+        terrain_cost, current_max_speed = self._update_terrain_and_speed(grid_x, grid_y)
+
+        neighbors = self.model.space.get_neighbors(self.pos, 80, False)
+        self.predators = [n for n in neighbors if getattr(n, 'is_predator', False)]
+        migrator_neighbors = [n for n in neighbors if not getattr(n, 'is_predator', False) and n != self]
+
+        current_max_speed = self._update_hunger_and_feeding(grid_x, grid_y, terrain_cost, migrator_neighbors, current_max_speed)
+        self.scared = False
+        current_max_speed = self._handle_river_effects(grid_x, grid_y, current_max_speed)
+
+        target_grid = self.path[self.current_target_idx]
+        target_pos = np.array([
+            target_grid[1] * GRID_SIZE + GRID_SIZE / 2,
+            target_grid[0] * GRID_SIZE + GRID_SIZE / 2
+        ])
+
+        if np.linalg.norm(target_pos - self.pos) < 20:
+            self.current_target_idx += 1
+            return
+
+        self._update_path_target(target_pos)
+
+        flee_force = self._calculate_predator_and_flee_forces(target_pos, migrator_neighbors, current_max_speed)
+        memory_force = self._calculate_memory_force(current_max_speed)
+
+        self._apply_movement_and_physics(target_pos, migrator_neighbors, flee_force, memory_force, current_max_speed)
 
     def separation(self, neighbors):
         steer = np.zeros(2)

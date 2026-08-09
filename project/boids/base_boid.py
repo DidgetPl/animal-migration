@@ -11,4 +11,4 @@ class BaseBoid(Agent):
 
     @property
     def is_predator(self) -> bool:
-        raise NotImplementedError("Brak zaimplementowanej metody w subklasie")
+        raise NotImplementedError("Brak zaimplementowanej metody w podklasie")
