@@ -26,7 +26,12 @@ class BoidModel(Model):
         seed = self.random.uniform(0.0, 1000.0)
 
         self.grass_map = np.ones((self.rows, self.cols), dtype=float)
-        self.grass_regrowth_rate = 0.001
+        self.grass_regrowth_rate = 0.00035
+
+        self.river_map = np.zeros((self.rows, self.cols), dtype=bool)
+        
+        self._generate_river()
+        self._update_terrain_costs()
 
         for i in range(self.rows):
             for j in range(self.cols):
@@ -58,14 +63,14 @@ class BoidModel(Model):
 
         self.obstacles = []
 
-        goal_node = (self.rows - 2, self.cols // 2)
+        goal_node = (2, self.cols // 2)
         self.terrain_map[goal_node[0]][goal_node[1]] = 1.0
 
         available_starts = np.where(self.terrain_map[2] == 1.0)[0]
         if len(available_starts) == 0:
             available_starts = np.where(self.terrain_map[2] < 10.0)[0]
             
-        possible_nodes = [(2, col) for col in available_starts if 1 < col < self.cols - 2]
+        possible_nodes = [(self.rows - 2, col) for col in available_starts if 1 < col < self.cols - 2]
         self.random.shuffle(possible_nodes)
         nodes_to_use = possible_nodes[:n]
         path_cache = {}
@@ -111,3 +116,21 @@ class BoidModel(Model):
         for agent in list(self.agents):
             if isinstance(agent, Migrator) or isinstance(agent, Predator):
                 agent.step()
+
+    def _generate_river(self):
+        river_center_x = self.cols // 2
+        width = 2
+
+        for r in range(self.rows):
+            offset = int(np.sin(r * 0.1) * 6 + np.sin(r * 0.03) * 12)
+            c_center = river_center_x + offset
+            
+            for c in range(c_center - width, c_center + width + 1):
+                if 0 <= c < self.cols:
+                    self.river_map[r][c] = True
+
+    def _update_terrain_costs(self):
+        for r in range(self.rows):
+            for c in range(self.cols):
+                if self.river_map[r][c]:
+                    self.terrain_map[r][c] = 15.0

@@ -48,13 +48,8 @@ class Migrator(BaseBoid):
         is_fertile_ground = (terrain_cost == 1.0) and (current_grass > 0.3)
         eating_neighbors = [n for n in migrator_neighbors if getattr(n, 'is_feeding', False)]
 
-        if self.hunger > 45.0:
-            print(self.hunger)
-
-        if self.hunger > 40.0 and is_fertile_ground:
-            if self.hunger > 75.0 or len(eating_neighbors) >= 2:
-                print("cosinus")
-                self.is_feeding = True
+        if (self.hunger > 40.0 or len(eating_neighbors) >= 2) and is_fertile_ground:
+            self.is_feeding = True
 
         if self.hunger <= 1.0 or current_grass < 0.15:
             self.is_feeding = False
@@ -73,9 +68,17 @@ class Migrator(BaseBoid):
         self.scared = False
         flee_force = np.zeros(2)
 
+        is_in_river = getattr(self.model, 'river_map', np.zeros((self.model.rows, self.model.cols)))[grid_y][grid_x]
+
+        if is_in_river:
+            current_max_speed *= 0.5
+            self.is_feeding = False
+            
+            self.velocity[1] += 0.05
+
         target_grid = self.path[self.current_target_idx]
         target_pos = np.array([
-            target_grid[1] * GRID_SIZE + GRID_SIZE/2, 
+            target_grid[1] * GRID_SIZE + GRID_SIZE/2,
             target_grid[0] * GRID_SIZE + GRID_SIZE/2
         ])
 

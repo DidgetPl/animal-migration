@@ -8,32 +8,70 @@ from variables import GRID_SIZE
 SCREEN_W, SCREEN_H = 1600, 900
 WORLD_W, WORLD_H = SCREEN_W * 2, SCREEN_H * 4
 
+def clamp_camera(cam_x, cam_y, zoom):
+    view_w = SCREEN_W / zoom
+    view_h = SCREEN_H / zoom
+
+    if view_w >= WORLD_W:
+        max_x = 0
+        cam_x = (WORLD_W - view_w) / 2
+    else:
+        max_x = WORLD_W - view_w
+        cam_x = np.clip(cam_x, 0, max_x)
+
+    if view_h >= WORLD_H:
+        max_y = 0
+        cam_y = (WORLD_H - view_h) / 2
+    else:
+        max_y = WORLD_H - view_h
+        cam_y = np.clip(cam_y, 0, max_y)
+
+    return cam_x, cam_y
+
 def main():
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
     clock = pygame.time.Clock()
     model = BoidModel(160, WORLD_W, WORLD_H, num_obstacles=35)
 
-    cam_x, cam_y = 0, 0
+    cam_x, cam_y = 0.0, 0.0
     zoom = 1.0
     dragging = False
 
     while True:
         for event in pygame.event.get():
-            if event.type == pygame.QUIT: return
+            if event.type == pygame.QUIT: 
+                return
+            
             elif event.type == pygame.MOUSEWHEEL:
-                zoom = np.clip(zoom + event.y * 0.1, 0.4, 2.5)
+                old_zoom = zoom
+                zoom = float(np.clip(zoom + event.y * 0.05, 0.3, 2.5))
+                
+                cam_x, cam_y = clamp_camera(cam_x, cam_y, zoom)
+
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1: dragging = True
+                if event.button == 1: 
+                    dragging = True
+
             elif event.type == pygame.MOUSEBUTTONUP:
-                if event.button == 1: dragging = False
+                if event.button == 1: 
+                    dragging = False
+
             elif event.type == pygame.MOUSEMOTION and dragging:
                 dx, dy = event.rel
-                cam_x = np.clip(cam_x - dx/zoom, 0, WORLD_W - SCREEN_W/zoom)
-                cam_y = np.clip(cam_y - dy/zoom, 0, WORLD_H - SCREEN_H/zoom)
+                cam_x -= dx / zoom
+                cam_y -= dy / zoom
+                
+                cam_x, cam_y = clamp_camera(cam_x, cam_y, zoom)
 
         model.step()
         screen.fill((20, 20, 25))
+
+        start_col = max(0, int(cam_x // GRID_SIZE))
+        end_col = min(model.cols, int((cam_x + SCREEN_W / zoom) // GRID_SIZE) + 2)
+        
+        start_row = max(0, int(cam_y // GRID_SIZE))
+        end_row = min(model.rows, int((cam_y + SCREEN_H / zoom) // GRID_SIZE) + 2)
 
         for obs in model.obstacles:
             r = obs.get_rect()
@@ -44,11 +82,23 @@ def main():
             pygame.draw.rect(screen, (60, 60, 70), draw_rect)
             pygame.draw.rect(screen, (100, 100, 110), draw_rect, 2)
 
-        for r in range(model.rows):
-            for c in range(model.cols):
+        time_factor = pygame.time.get_ticks() * 0.003
+
+        for r in range(start_row, end_row):
+            for c in range(start_col, end_col):
                 val = model.terrain_height[r][c]
-                
-                if val > model.mountain_threshold:
+
+                if hasattr(model, 'river_map') and model.river_map[r][c]:
+                    wave = np.sin(r * 0.4 + time_factor) * 0.1
+                    
+                    water_depth = np.clip(val + wave, 0.0, 1.0)
+
+                    c_shallow = pygame.Color(70, 150, 200)
+                    c_deep = pygame.Color(20, 60, 130)
+
+                    color = c_shallow.lerp(c_deep, water_depth)
+
+                elif val > model.mountain_threshold:
                     factor = (val - model.mountain_threshold) / (1.0 - model.mountain_threshold)
                     c_low = pygame.Color(110, 100, 90)
                     c_high = pygame.Color(45, 40, 35)
@@ -61,7 +111,7 @@ def main():
                     color = c_low.lerp(c_high, factor)
                     
                 else:
-                    factor = val / (model.forest_threshold)
+                    factor = val / model.forest_threshold
                     c_low = pygame.Color(185, 245, 185)
                     c_high = pygame.Color(115, 215, 115)
                     color = c_low.lerp(c_high, factor)
@@ -72,7 +122,10 @@ def main():
                     GRID_SIZE * zoom + 1, 
                     GRID_SIZE * zoom + 1
                 )
+
                 pygame.draw.rect(screen, color, rect)
+
+
 
         for agent in model.agents:
             if agent.pos is not None:
@@ -104,22 +157,7 @@ def main():
                         p2 = (rx + np.cos(angle + 2.3) * p_size/2, ry + np.sin(angle + 2.3) * p_size/2)
                         p3 = (rx + np.cos(angle - 2.3) * p_size/2, ry + np.sin(angle - 2.3) * p_size/2)
                         pygame.draw.polygon(screen, (255, 0, 50), [p1, p2, p3])
-        
-        #UI
-        '''
-        hunting_count = sum(
-            1 for obj in model.agents
-            if getattr(obj, "is_hunting", False)
-        )
 
-        font = pygame.font.SysFont("Arial", 24)
-        text = font.render(
-            f"Polujące drapieżniki: {hunting_count}",
-            True,
-            (255, 255, 255)
-        )
-        screen.blit(text, (20, 20))
-        '''
         pygame.display.flip()
         clock.tick(60)
 
