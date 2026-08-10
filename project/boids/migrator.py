@@ -160,6 +160,13 @@ class Migrator(BaseBoid):
             self.velocity = (self.velocity / current_speed) * current_max_speed
 
         new_pos = self.pos + self.velocity
+
+        if new_pos[0] <= 5 or new_pos[0] >= self.model.width - 5:
+            self.velocity[0] = 0.0
+
+        if new_pos[1] >= self.model.height - 5:
+            self.velocity[1] = min(0.0, self.velocity[1])
+
         new_pos[0] = np.clip(new_pos[0], 0, self.model.width - 1)
         new_pos[1] = np.clip(new_pos[1], 0, self.model.height - 1)
 
