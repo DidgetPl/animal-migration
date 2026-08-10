@@ -73,15 +73,6 @@ def main():
         start_row = max(0, int(cam_y // GRID_SIZE))
         end_row = min(model.rows, int((cam_y + SCREEN_H / zoom) // GRID_SIZE) + 2)
 
-        for obs in model.obstacles:
-            r = obs.get_rect()
-            draw_rect = pygame.Rect(
-                (r.x - cam_x) * zoom, (r.y - cam_y) * zoom,
-                r.width * zoom, r.height * zoom
-            )
-            pygame.draw.rect(screen, (60, 60, 70), draw_rect)
-            pygame.draw.rect(screen, (100, 100, 110), draw_rect, 2)
-
         time_factor = pygame.time.get_ticks() * 0.003
 
         for r in range(start_row, end_row):

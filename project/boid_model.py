@@ -1,10 +1,10 @@
 import numpy as np
 from boids.migrator import Migrator
 from boids.predator import Predator
+from flow_field import MigrationFlowField
 from mesa import Model
 from mesa.space import ContinuousSpace
 from noise import snoise2
-from pathfinding import astar
 from variables import GRID_SIZE
 
 
@@ -14,6 +14,7 @@ class BoidModel(Model):
         self.width, self.height = width, height
         self.space = ContinuousSpace(width, height, False)
         self.grid_to_remove = []
+        self.steps = 0
 
         self.rows = height // GRID_SIZE
         self.cols = width // GRID_SIZE
@@ -31,68 +32,50 @@ class BoidModel(Model):
         self.river_map = np.zeros((self.rows, self.cols), dtype=bool)
         
         self._generate_river()
-        self._update_terrain_costs()
-
+        
         for i in range(self.rows):
             for j in range(self.cols):
                 nx = i / 18.0
                 ny = j / 18.0
                 
                 v1 = snoise2(nx, ny, octaves=1, base=int(seed))
-                
                 v2 = snoise2(nx * 3.5, ny * 3.5, octaves=2, base=int(seed) + 1)
-                
                 v3 = snoise2(nx * 8.0, ny * 8.0, octaves=1, base=int(seed) + 2)
                 
                 total_noise = (1.0 * v1) + (0.35 * v2) + (0.1 * v3)
-                
                 val = (total_noise + 1.45) / 2.9
-                val = np.clip(val, 0.0, 1.0)
-                
-                val = val ** 2.2
+                val = np.clip(val, 0.0, 1.0) ** 2.2
                 
                 self.terrain_height[i][j] = val
 
-                if hasattr(self, 'river_map') and self.river_map[i][j]:
-                    self.terrain_cost_map[i][j] = 12.0 #10.0?
+                if self.river_map[i][j]:
+                    self.terrain_cost_map[i][j] = 12.0
                 elif val > self.mountain_threshold:
-                    self.terrain_cost_map[i][j] = 8.0 #7.0
+                    self.terrain_cost_map[i][j] = 8.0
                 elif val > self.forest_threshold:
-                    self.terrain_cost_map[i][j] = 3.5 #3.5
+                    self.terrain_cost_map[i][j] = 3.5
                 else: 
-                    self.terrain_cost_map[i][j] = 1.0 #1.0
+                    self.terrain_cost_map[i][j] = 1.0
 
+        self.flow_field = MigrationFlowField(self)
+        self.flow_field.update_field()
 
-        self.obstacles = []
-
-        goal_node = (2, self.cols // 2)
-        self.terrain_cost_map[goal_node[0]][goal_node[1]] = 1.0
-
-        available_starts = np.where(self.terrain_cost_map[2] == 1.0)[0]
+        available_starts = np.where(self.terrain_cost_map[self.rows - 3] < 10.0)[0]
         if len(available_starts) == 0:
-            available_starts = np.where(self.terrain_cost_map[2] < 10.0)[0]
-            
-        possible_nodes = [(self.rows - 2, col) for col in available_starts if 1 < col < self.cols - 2]
-        self.random.shuffle(possible_nodes)
-        nodes_to_use = possible_nodes[:n]
-        path_cache = {}
+            available_starts = np.arange(1, self.cols - 1)
 
-        for start_node in nodes_to_use:
-            if start_node not in path_cache:
-                path_cache[start_node] = astar(self.terrain_cost_map, start_node, goal_node)
+        for _ in range(n):
+            col = self.random.choice(available_starts)
+            row = self.rows - 2 + self.random.uniform(-0.5, 0.5)
             
-            path = path_cache[start_node]
-
-            if path:
-                start_pos = np.array([
-                    start_node[1] * GRID_SIZE + GRID_SIZE/2,
-                    start_node[0] * GRID_SIZE + GRID_SIZE/2
-                ])
-                
-                migrator = Migrator(self, path)
-                self.space.place_agent(migrator, start_pos)
-                if migrator not in self.agents:
-                    self.agents.add(migrator)
+            start_pos = np.array([
+                col * GRID_SIZE + GRID_SIZE / 2,
+                row * GRID_SIZE + GRID_SIZE / 2
+            ])
+            
+            migrator = Migrator(self)
+            self.space.place_agent(migrator, start_pos)
+            self.agents.add(migrator)
 
         self.num_predators = 7
         for _ in range(self.num_predators):
@@ -109,15 +92,22 @@ class BoidModel(Model):
         )
 
     def step(self):
+        self.step_environment()
+
         for agent in self.grid_to_remove:
             if agent in self.agents:
                 self.space.remove_agent(agent)
                 agent.remove()
         self.grid_to_remove = []
-
+        
         for agent in list(self.agents):
-            if isinstance(agent, Migrator) or isinstance(agent, Predator):
+            if isinstance(agent, (Migrator, Predator)):
                 agent.step()
+        
+        if self.steps % 10 == 0:
+            self.flow_field.update_field()
+            
+        self.steps += 1
 
     def _generate_river(self):
         river_center_x = self.cols // 2
@@ -130,9 +120,3 @@ class BoidModel(Model):
             for c in range(c_center - width, c_center + width + 1):
                 if 0 <= c < self.cols:
                     self.river_map[r][c] = True
-
-    def _update_terrain_costs(self):
-        for r in range(self.rows):
-            for c in range(self.cols):
-                if self.river_map[r][c]:
-                    self.terrain_cost_map[r][c] = 15.0

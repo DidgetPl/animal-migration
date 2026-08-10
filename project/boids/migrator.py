@@ -4,10 +4,8 @@ from variables import GRID_SIZE
 
 
 class Migrator(BaseBoid):
-    def __init__(self, model, path):
+    def __init__(self, model):
         super().__init__(model)
-        self.path = path
-        self.current_target_idx = 0
         self.max_speed = 3.0
         self.max_force = 0.2
         self.velocity = np.array([model.random.uniform(-1, 1), 1.0])
@@ -72,15 +70,6 @@ class Migrator(BaseBoid):
 
         return current_max_speed
 
-    def _update_path_target(self, target_pos):
-        look_ahead = min(len(self.path), self.current_target_idx + 8)
-        for idx in range(self.current_target_idx + 1, look_ahead):
-            chk_grid = self.path[idx]
-            chk_pos = np.array([chk_grid[1] * GRID_SIZE + GRID_SIZE/2, chk_grid[0] * GRID_SIZE + GRID_SIZE/2])
-            if np.linalg.norm(chk_pos - self.pos) < 40:
-                self.current_target_idx = idx
-                break
-
     def _calculate_predator_and_flee_forces(self, target_pos, migrator_neighbors, current_max_speed):
         flee_force = np.zeros(2)
 
@@ -143,13 +132,11 @@ class Migrator(BaseBoid):
 
         return memory_force
 
-    def _apply_movement_and_physics(self, target_pos, migrator_neighbors, flee_force, memory_force, current_max_speed):
-        desired = (target_pos - self.pos)
-        norm_desired = np.linalg.norm(desired)
-        desired = (desired / norm_desired) * current_max_speed if norm_desired > 0 else np.zeros(2)
+    def _apply_movement_and_physics(self, flow_vector, migrator_neighbors, flee_force, memory_force, current_max_speed):
+        desired = flow_vector * current_max_speed
         seek_force = desired - self.velocity
 
-        sep = self.separation(migrator_neighbors) * 2.0
+        sep = self.separation(migrator_neighbors) * 2.0  
         ali = self.alignment(migrator_neighbors) * 1.5
         coh = self.cohesion(migrator_neighbors) * 0.6
 
@@ -160,8 +147,11 @@ class Migrator(BaseBoid):
         else:
             total_force = seek_force + sep + ali + coh + memory_force * 2.0
         
-        if np.linalg.norm(total_force) > self.max_force:
-            total_force = (total_force / np.linalg.norm(total_force)) * self.max_force
+        speed_ratio = current_max_speed / self.max_speed
+        effective_max_force = self.max_force * speed_ratio
+
+        if np.linalg.norm(total_force) > effective_max_force:
+            total_force = (total_force / np.linalg.norm(total_force)) * effective_max_force
             
         self.velocity += total_force
         
@@ -177,7 +167,7 @@ class Migrator(BaseBoid):
         self.pos = new_pos
 
     def step(self):
-        if not self.path or self.current_target_idx >= len(self.path):
+        if self.pos[1] < 20:
             self.model.grid_to_remove.append(self)
             return
 
@@ -192,22 +182,12 @@ class Migrator(BaseBoid):
         self.scared = False
         current_max_speed = self._handle_river_effects(grid_x, grid_y, current_max_speed)
 
-        target_grid = self.path[self.current_target_idx]
-        target_pos = np.array([
-            target_grid[1] * GRID_SIZE + GRID_SIZE / 2,
-            target_grid[0] * GRID_SIZE + GRID_SIZE / 2
-        ])
+        flow_vector = self.model.flow_field.get_force_at(self.pos)
 
-        if np.linalg.norm(target_pos - self.pos) < 20:
-            self.current_target_idx += 1
-            return
-
-        self._update_path_target(target_pos)
-
-        flee_force = self._calculate_predator_and_flee_forces(target_pos, migrator_neighbors, current_max_speed)
+        flee_force = self._calculate_predator_and_flee_forces(self.pos, migrator_neighbors, current_max_speed)
         memory_force = self._calculate_memory_force(current_max_speed)
 
-        self._apply_movement_and_physics(target_pos, migrator_neighbors, flee_force, memory_force, current_max_speed)
+        self._apply_movement_and_physics(flow_vector, migrator_neighbors, flee_force, memory_force, current_max_speed)
 
     def separation(self, neighbors):
         steer = np.zeros(2)
