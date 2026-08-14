@@ -87,7 +87,7 @@ class BoidModel(Model):
             self.space.place_agent(predator, [rx, ry])
             self.agents.add(predator)
 
-        self.num_point_obstacles = 35
+        self.num_point_obstacles = 120
         for _ in range(self.num_point_obstacles):
             rx = self.random.uniform(20, self.width - 20)
             ry = self.random.uniform(20, self.height - 20)

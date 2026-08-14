@@ -9,25 +9,30 @@ class Migrator(BaseBoid):
         super().__init__(model)
         self.max_speed = 3.0
         self.max_force = 0.2
-        self.velocity = np.array([model.random.uniform(-1, 1), 1.0])
+        self.velocity = np.array([model.random.uniform(-1, 1), -1.0], dtype=np.float32)
+        
         self.scared = False
         self.predators = []
         self.last_known_predator_pos = None
         self.memory_timer = 0
 
         self.hunger = model.random.uniform(10, 40)
+        self.max_hunger = 100.0
         self.hunger_rate = 0.035
         self.is_feeding = False
+
+        self.merit_score = 1.0
+        self.age = 0
+        self.last_y = None
+        self.stuck_counter = 0
 
     @property
     def is_predator(self) -> bool:
         return False
 
     def _get_grid_coords(self):
-        gx = int(self.pos[0] // GRID_SIZE)
-        gy = int(self.pos[1] // GRID_SIZE)
-        gx = np.clip(gx, 0, self.model.cols - 1)
-        gy = np.clip(gy, 0, self.model.rows - 1)
+        gx = int(np.clip(self.pos[0] // GRID_SIZE, 0, self.model.cols - 1))
+        gy = int(np.clip(self.pos[1] // GRID_SIZE, 0, self.model.rows - 1))
         return gx, gy
 
     def _update_terrain_and_speed(self, grid_x, grid_y):
@@ -38,7 +43,7 @@ class Migrator(BaseBoid):
     def _update_hunger_and_feeding(self, grid_x, grid_y, terrain_cost, migrator_neighbors, current_max_speed):
         current_grass = getattr(self.model, 'grass_map', np.ones((self.model.rows, self.model.cols)))[grid_y][grid_x]
         
-        self.hunger = min(100.0, self.hunger + self.hunger_rate)
+        self.hunger = min(self.max_hunger, self.hunger + self.hunger_rate)
         is_fertile_ground = (terrain_cost == 1.0) and (current_grass > 0.3)
         eating_neighbors = [n for n in migrator_neighbors if getattr(n, 'is_feeding', False)]
 
@@ -65,14 +70,14 @@ class Migrator(BaseBoid):
         is_in_river = getattr(self.model, 'river_map', np.zeros((self.model.rows, self.model.cols)))[grid_y][grid_x]
         
         if is_in_river:
-            current_max_speed = self.max_speed * 0.25
+            current_max_speed = self.max_speed * 0.3
             self.is_feeding = False
-            self.velocity[1] += 0.03
+            self.velocity[1] += 0.02
 
         return current_max_speed
 
     def _calculate_predator_and_flee_forces(self, target_pos, migrator_neighbors, current_max_speed):
-        flee_force = np.zeros(2)
+        flee_force = np.zeros(2, dtype=np.float32)
 
         if self.predators:
             self.scared = True
@@ -92,7 +97,7 @@ class Migrator(BaseBoid):
             
             if norm_target > 0:
                 line_to_target /= norm_target
-                perpendicular = np.array([-line_to_target[1], line_to_target[0]])
+                perpendicular = np.array([-line_to_target[1], line_to_target[0]], dtype=np.float32)
                 
                 agent_vec = self.pos - closest_predator.pos
                 dot_product = np.dot(agent_vec, perpendicular)
@@ -118,7 +123,7 @@ class Migrator(BaseBoid):
         return flee_force
 
     def _calculate_memory_force(self, current_max_speed):
-        memory_force = np.zeros(2)
+        memory_force = np.zeros(2, dtype=np.float32)
         if not self.predators and self.last_known_predator_pos is not None and self.memory_timer > 0:
             self.memory_timer -= 1
             dist_to_danger_zone = np.linalg.norm(self.pos - self.last_known_predator_pos)
@@ -133,20 +138,111 @@ class Migrator(BaseBoid):
 
         return memory_force
 
+    def _is_scout_at_front(self, migrator_neighbors):
+        if not migrator_neighbors:
+            return True
+
+        speed = np.linalg.norm(self.velocity)
+        if speed == 0:
+            return False
+
+        heading = self.velocity / speed
+        for other in migrator_neighbors:
+            vec_to_other = other.pos - self.pos
+            dist = np.linalg.norm(vec_to_other)
+            if 0 < dist < 50:
+                if np.dot(heading, vec_to_other / dist) > 0.5:
+                    return False
+        return True
+
+    def avoid_obstacles(self, neighbors):
+        avoid_force = np.zeros(2, dtype=np.float32)
+        obstacles = [n for n in neighbors if isinstance(n, Obstacle)]
+        
+        if not obstacles:
+            return avoid_force
+
+        look_ahead = 15.0
+
+        for obstacle in obstacles:
+            to_obstacle = obstacle.pos - self.pos
+            dist = np.linalg.norm(to_obstacle)
+            effective_dist = dist - obstacle.radius
+
+            if effective_dist < look_ahead:
+                heading = self.velocity / (np.linalg.norm(self.velocity) + 1e-5)
+                dot = np.dot(heading, to_obstacle)
+
+                if dot > 0:
+                    repulsion = -to_obstacle / (dist + 1e-5)
+                    strength = (look_ahead - max(0.0, effective_dist)) / look_ahead
+                    avoid_force += repulsion * (strength ** 2) * self.max_speed * 2.0
+
+        return avoid_force
+
+    def _update_merit_score(self, migrator_neighbors, terrain_cost, grid_x, grid_y):
+        self.age += 1
+        
+        is_in_river = getattr(self.model, 'river_map', np.zeros((self.model.rows, self.model.cols)))[grid_y][grid_x]
+        is_in_forest = terrain_cost > 1.5
+
+        self.merit_score *= 0.999
+
+        if self.last_y is None:
+            self.last_y = self.pos[1]
+            return
+
+        delta_y = self.last_y - self.pos[1]
+        self.last_y = self.pos[1]
+        speed = np.linalg.norm(self.velocity)
+
+        if delta_y > 0.05:
+            is_scout = self._is_scout_at_front(migrator_neighbors)
+            terrain_multiplier = 3.0 if (is_in_river or is_in_forest) else 1.0
+            bonus = (0.04 if is_scout else 0.015) * terrain_multiplier
+            
+            self.merit_score += bonus
+            self.stuck_counter = 0
+
+        elif speed < 0.2 and not self.is_feeding and not is_in_river and not is_in_forest:
+            self.stuck_counter += 1
+            if self.stuck_counter > 40:
+                self.merit_score -= 0.03
+        else:
+            if not is_in_river and not is_in_forest:
+                self.stuck_counter = max(0, self.stuck_counter - 1)
+
+        if (is_in_river or is_in_forest) and speed > 0.1:
+            self.merit_score += 0.01
+
+        self.merit_score = np.clip(self.merit_score, 0.1, 5.0)
+
     def _apply_movement_and_physics(self, flow_vector, migrator_neighbors, flee_force, memory_force, obstacle_force, current_max_speed):
         desired = flow_vector * current_max_speed
         seek_force = desired - self.velocity
 
-        sep = self.separation(migrator_neighbors) * 2.0
-        ali = self.alignment(migrator_neighbors) * 1.5
-        coh = self.cohesion(migrator_neighbors) * 0.6
+        grid_x, grid_y = self._get_grid_coords()
+        terrain_cost = self.model.terrain_cost_map[grid_y][grid_x]
+        is_in_forest = terrain_cost > 1.5
+
+        cohesion_weight = 0.3 if is_in_forest else 0.6
+
+        sep = self.separation(migrator_neighbors) * 2.2
+        ali = self.alignment(migrator_neighbors) * 1.1
+        coh = self.cohesion(migrator_neighbors) * cohesion_weight
+
+        time_seed = (self.age * 0.05) + (id(self) % 100)
+        lateral_wiggle = np.array([np.sin(time_seed) * 0.25, 0.0], dtype=np.float32)
+
+        my_merit = self.merit
+        leadership_factor = np.clip(my_merit, 0.85, 1.3)
 
         if self.scared:
-            total_force = seek_force * 0.2 + sep + ali + coh + flee_force * 3.5 + obstacle_force * 4.0
+            total_force = seek_force * 0.2 + sep + ali + coh + flee_force * 3.5 + obstacle_force * 3.0
         elif self.is_feeding:
-            total_force = seek_force * 0.05 + sep * 2.5 + ali * 0.1 + coh * 1.2 + obstacle_force * 4.0
+            total_force = seek_force * 0.05 + sep * 2.5 + ali * 0.1 + coh * 1.2 + obstacle_force * 3.0
         else:
-            total_force = seek_force + sep + ali + coh + memory_force * 2.0 + obstacle_force * 4.0
+            total_force = (seek_force * leadership_factor) + sep + ali + coh + memory_force * 1.5 + obstacle_force * 3.0 + lateral_wiggle
         
         speed_ratio = current_max_speed / self.max_speed
         effective_max_force = self.max_force * speed_ratio
@@ -190,8 +286,9 @@ class Migrator(BaseBoid):
         self.scared = False
         current_max_speed = self._handle_river_effects(grid_x, grid_y, current_max_speed)
 
-        flow_vector = self.model.flow_field.get_force_at(self.pos)
+        self._update_merit_score(migrator_neighbors, terrain_cost, grid_x, grid_y)
 
+        flow_vector = self.model.flow_field.get_force_at(self.pos)
         obstacle_force = self.avoid_obstacles(neighbors)
 
         flee_force = self._calculate_predator_and_flee_forces(self.pos, migrator_neighbors, current_max_speed)
@@ -200,14 +297,12 @@ class Migrator(BaseBoid):
         self._apply_movement_and_physics(flow_vector, migrator_neighbors, flee_force, memory_force, obstacle_force, current_max_speed)
 
     @property
-    def merit(self): #Obecnie za zasgługi uznaje się głównie postęp w migracji oraz poziom sytości
-        progress = (self.model.height - self.pos[1]) / self.model.height
+    def merit(self):
         satiation = 1.0 - (self.hunger / self.max_hunger)
-        
-        return np.clip(0.2 * progress + 0.8 * satiation, 0.1, 2.0)
+        return np.clip(self.merit_score * (0.6 + 0.4 * satiation), 0.1, 5.0)
 
     def separation(self, neighbors):
-        steer = np.zeros(2)
+        steer = np.zeros(2, dtype=np.float32)
         for n in neighbors:
             diff = self.pos - n.pos
             dist = np.linalg.norm(diff)
@@ -217,9 +312,9 @@ class Migrator(BaseBoid):
 
     def alignment(self, neighbors):
         if not neighbors:
-            return np.zeros(2)
+            return np.zeros(2, dtype=np.float32)
         
-        weighted_velocity_sum = np.zeros(2)
+        weighted_velocity_sum = np.zeros(2, dtype=np.float32)
         total_weight = 0.0
 
         for neighbor in neighbors:
@@ -232,13 +327,13 @@ class Migrator(BaseBoid):
             norm = np.linalg.norm(avg_velocity)
             if norm > 0:
                 return (avg_velocity / norm) * self.max_speed - self.velocity
-        return np.zeros(2)
+        return np.zeros(2, dtype=np.float32)
 
     def cohesion(self, neighbors):
         if not neighbors:
-            return np.zeros(2)
+            return np.zeros(2, dtype=np.float32)
         
-        weighted_pos_sum = np.zeros(2)
+        weighted_pos_sum = np.zeros(2, dtype=np.float32)
         total_weight = 0.0
 
         for neighbor in neighbors:
@@ -252,31 +347,4 @@ class Migrator(BaseBoid):
             norm = np.linalg.norm(desired)
             if norm > 0:
                 return (desired / norm) * self.max_speed - self.velocity
-        return np.zeros(2)
-
-    def avoid_obstacles(self, neighbors):
-        avoid_force = np.zeros(2)
-        
-        obstacles = [n for n in neighbors if isinstance(n, Obstacle)]
-        if not obstacles:
-            return avoid_force
-
-        look_ahead = 25.0
-
-        for obstacle in obstacles:
-            to_obstacle = obstacle.pos - self.pos
-            dist = np.linalg.norm(to_obstacle)
-            
-            effective_dist = dist - obstacle.radius
-            
-            if effective_dist < look_ahead:
-                heading = self.velocity / (np.linalg.norm(self.velocity) + 1e-5)
-                dot = np.dot(heading, to_obstacle)
-
-                if dot > 0:
-                    repulsion = -to_obstacle / (dist + 1e-5)
-                    
-                    strength = (look_ahead - max(0.0, effective_dist)) / look_ahead
-                    avoid_force += repulsion * (strength ** 2) * self.max_speed
-
-        return avoid_force
+        return np.zeros(2, dtype=np.float32)

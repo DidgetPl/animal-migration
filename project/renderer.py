@@ -1,0 +1,120 @@
+import numpy as np
+import pygame
+from boids.migrator import Migrator
+from boids.obstacle import Obstacle
+from boids.predator import Predator
+from variables import GRID_SIZE
+
+
+class WorldRenderer:
+    def __init__(self, screen_w, screen_h):
+        self.screen_w = screen_w
+        self.screen_h = screen_h
+
+    def world_to_screen(self, pos, cam_x, cam_y, zoom):
+        sx = (pos[0] - cam_x) * zoom
+        sy = (pos[1] - cam_y) * zoom
+        return sx, sy
+
+    def is_visible(self, sx, sy, margin=50):
+        return -margin <= sx <= self.screen_w + margin and -margin <= sy <= self.screen_h + margin
+
+    def draw_terrain(self, screen, model, cam_x, cam_y, zoom):
+        start_col = max(0, int(cam_x // GRID_SIZE))
+        end_col = min(model.cols, int((cam_x + self.screen_w / zoom) // GRID_SIZE) + 2)
+        
+        start_row = max(0, int(cam_y // GRID_SIZE))
+        end_row = min(model.rows, int((cam_y + self.screen_h / zoom) // GRID_SIZE) + 2)
+
+        time_factor = pygame.time.get_ticks() * 0.003
+
+        for r in range(start_row, end_row):
+            for c in range(start_col, end_col):
+                val = model.terrain_height[r][c]
+
+                if hasattr(model, 'river_map') and model.river_map[r][c]:
+                    wave = np.sin(r * 0.4 + time_factor) * 0.1
+                    water_depth = np.clip(val + wave, 0.0, 1.0)
+
+                    c_shallow = pygame.Color(70, 150, 200)
+                    c_deep = pygame.Color(20, 60, 130)
+                    color = c_shallow.lerp(c_deep, water_depth)
+
+                elif val > model.mountain_threshold:
+                    factor = (val - model.mountain_threshold) / (1.0 - model.mountain_threshold)
+                    c_low = pygame.Color(110, 100, 90)
+                    c_high = pygame.Color(45, 40, 35)
+                    color = c_low.lerp(c_high, factor)
+                    
+                elif val > model.forest_threshold:
+                    factor = (val - model.forest_threshold) / (model.mountain_threshold - model.forest_threshold)
+                    c_low = pygame.Color(45, 150, 45)
+                    c_high = pygame.Color(20, 75, 20)
+                    color = c_low.lerp(c_high, factor)
+                    
+                else:
+                    factor = val / model.forest_threshold
+                    c_low = pygame.Color(205, 225, 135)
+                    c_high = pygame.Color(135, 195, 65)
+                    color = c_low.lerp(c_high, factor)
+
+                rect = pygame.Rect(
+                    (c * GRID_SIZE - cam_x) * zoom,
+                    (r * GRID_SIZE - cam_y) * zoom,
+                    GRID_SIZE * zoom + 1,
+                    GRID_SIZE * zoom + 1
+                )
+                pygame.draw.rect(screen, color, rect)
+
+    def draw_agents_and_obstacles(self, screen, model, cam_x, cam_y, zoom):
+        for agent in model.agents:
+            if agent.pos is None:
+                continue
+
+            rx, ry = self.world_to_screen(agent.pos, cam_x, cam_y, zoom)
+
+            if not self.is_visible(rx, ry):
+                continue
+
+            if isinstance(agent, Obstacle):
+                radius = getattr(agent, 'radius', 8.0) * zoom
+                
+                if agent.obstacle_type == "rock":
+                    pygame.draw.circle(screen, (80, 80, 85), (int(rx), int(ry)), max(2, int(radius)))
+                    pygame.draw.circle(screen, (50, 50, 55), (int(rx), int(ry)), max(2, int(radius)), width=max(1, int(2 * zoom)))
+                
+                elif agent.obstacle_type == "tree":
+                    pygame.draw.circle(screen, (15, 70, 15), (int(rx), int(ry)), max(3, int(radius)))
+                    pygame.draw.circle(screen, (35, 120, 35), (int(rx), int(ry)), max(1, int(radius * 0.6)))
+
+            elif isinstance(agent, (Migrator, Predator)):
+                size = 8 * zoom
+                vel = agent.velocity
+                speed = np.linalg.norm(vel)
+                angle = np.arctan2(vel[1], vel[0]) if speed > 0 else 0.0
+                
+                if isinstance(agent, Migrator):
+                    if getattr(agent, 'scared', False):
+                        color = (161, 47, 18)
+                    elif getattr(agent, 'is_feeding', False):
+                        color = (196, 164, 132)
+                    else:
+                        color = (101, 67, 33)
+
+                    p1 = (rx + np.cos(angle) * size, ry + np.sin(angle) * size)
+                    p2 = (rx + np.cos(angle + 2.5) * size / 2, ry + np.sin(angle + 2.5) * size / 2)
+                    p3 = (rx + np.cos(angle - 2.5) * size / 2, ry + np.sin(angle - 2.5) * size / 2)
+                    pygame.draw.polygon(screen, color, [p1, p2, p3])
+
+                elif isinstance(agent, Predator):
+                    p_size = 14 * zoom
+                    p1 = (rx + np.cos(angle) * p_size, ry + np.sin(angle) * p_size)
+                    p2 = (rx + np.cos(angle + 2.3) * p_size / 2, ry + np.sin(angle + 2.3) * p_size / 2)
+                    p3 = (rx + np.cos(angle - 2.3) * p_size / 2, ry + np.sin(angle - 2.3) * p_size / 2)
+                    pygame.draw.polygon(screen, (255, 0, 50), [p1, p2, p3])
+
+    def render(self, screen, model, cam_x, cam_y, zoom):
+        screen.fill((20, 20, 25))
+        self.draw_terrain(screen, model, cam_x, cam_y, zoom)
+        self.draw_agents_and_obstacles(screen, model, cam_x, cam_y, zoom)
+        pygame.display.flip()
