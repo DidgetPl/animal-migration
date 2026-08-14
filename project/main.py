@@ -119,7 +119,7 @@ def main():
 
 
         for agent in model.agents:
-            if agent.pos is not None:
+            if agent.pos is not None and isinstance(agent, (Migrator, Predator)):
                 rx = (agent.pos[0] - cam_x) * zoom
                 ry = (agent.pos[1] - cam_y) * zoom
                 

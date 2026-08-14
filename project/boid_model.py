@@ -1,5 +1,6 @@
 import numpy as np
 from boids.migrator import Migrator
+from boids.obstacle import Obstacle
 from boids.predator import Predator
 from flow_field import MigrationFlowField
 from mesa import Model
@@ -85,6 +86,22 @@ class BoidModel(Model):
             predator = Predator(self, [rx, ry])
             self.space.place_agent(predator, [rx, ry])
             self.agents.add(predator)
+
+        self.num_point_obstacles = 35
+        for _ in range(self.num_point_obstacles):
+            rx = self.random.uniform(20, self.width - 20)
+            ry = self.random.uniform(20, self.height - 20)
+            
+            grid_x = int(rx // GRID_SIZE)
+            grid_y = int(ry // GRID_SIZE)
+
+            if not self.river_map[grid_y][grid_x] and self.terrain_cost_map[grid_y][grid_x] < 5.0:
+                o_type = self.random.choice(["rock", "tree"])
+                radius = 6.0 if o_type == "rock" else 10.0
+                
+                obstacle = Obstacle(self, obstacle_type=o_type, radius=radius)
+                self.space.place_agent(obstacle, [rx, ry])
+                self.agents.add(obstacle)
 
     def step_environment(self):
         self.grass_map = np.clip(

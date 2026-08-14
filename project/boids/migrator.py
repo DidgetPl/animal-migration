@@ -1,5 +1,6 @@
 import numpy as np
 from boids.base_boid import BaseBoid
+from boids.obstacle import Obstacle
 from variables import GRID_SIZE
 
 
@@ -132,20 +133,20 @@ class Migrator(BaseBoid):
 
         return memory_force
 
-    def _apply_movement_and_physics(self, flow_vector, migrator_neighbors, flee_force, memory_force, current_max_speed):
+    def _apply_movement_and_physics(self, flow_vector, migrator_neighbors, flee_force, memory_force, obstacle_force, current_max_speed):
         desired = flow_vector * current_max_speed
         seek_force = desired - self.velocity
 
-        sep = self.separation(migrator_neighbors) * 2.0  
+        sep = self.separation(migrator_neighbors) * 2.0
         ali = self.alignment(migrator_neighbors) * 1.5
         coh = self.cohesion(migrator_neighbors) * 0.6
 
         if self.scared:
-            total_force = seek_force * 0.2 + sep + ali + coh + flee_force * 3.5
+            total_force = seek_force * 0.2 + sep + ali + coh + flee_force * 3.5 + obstacle_force * 4.0
         elif self.is_feeding:
-            total_force = seek_force * 0.05 + sep * 2.5 + ali * 0.1 + coh * 1.2
+            total_force = seek_force * 0.05 + sep * 2.5 + ali * 0.1 + coh * 1.2 + obstacle_force * 4.0
         else:
-            total_force = seek_force + sep + ali + coh + memory_force * 2.0
+            total_force = seek_force + sep + ali + coh + memory_force * 2.0 + obstacle_force * 4.0
         
         speed_ratio = current_max_speed / self.max_speed
         effective_max_force = self.max_force * speed_ratio
@@ -181,9 +182,9 @@ class Migrator(BaseBoid):
         grid_x, grid_y = self._get_grid_coords()
         terrain_cost, current_max_speed = self._update_terrain_and_speed(grid_x, grid_y)
 
-        neighbors = self.model.space.get_neighbors(self.pos, 80, False)
+        neighbors = self.model.space.get_neighbors(self.pos, 60, False)
         self.predators = [n for n in neighbors if getattr(n, 'is_predator', False)]
-        migrator_neighbors = [n for n in neighbors if not getattr(n, 'is_predator', False) and n != self]
+        migrator_neighbors = [n for n in neighbors if isinstance(n, Migrator) and not getattr(n, 'is_predator', False) and n != self]
 
         current_max_speed = self._update_hunger_and_feeding(grid_x, grid_y, terrain_cost, migrator_neighbors, current_max_speed)
         self.scared = False
@@ -191,10 +192,19 @@ class Migrator(BaseBoid):
 
         flow_vector = self.model.flow_field.get_force_at(self.pos)
 
+        obstacle_force = self.avoid_obstacles(neighbors)
+
         flee_force = self._calculate_predator_and_flee_forces(self.pos, migrator_neighbors, current_max_speed)
         memory_force = self._calculate_memory_force(current_max_speed)
 
-        self._apply_movement_and_physics(flow_vector, migrator_neighbors, flee_force, memory_force, current_max_speed)
+        self._apply_movement_and_physics(flow_vector, migrator_neighbors, flee_force, memory_force, obstacle_force, current_max_speed)
+
+    @property
+    def merit(self): #Obecnie za zasgługi uznaje się głównie postęp w migracji oraz poziom sytości
+        progress = (self.model.height - self.pos[1]) / self.model.height
+        satiation = 1.0 - (self.hunger / self.max_hunger)
+        
+        return np.clip(0.2 * progress + 0.8 * satiation, 0.1, 2.0)
 
     def separation(self, neighbors):
         steer = np.zeros(2)
@@ -206,17 +216,67 @@ class Migrator(BaseBoid):
         return steer
 
     def alignment(self, neighbors):
-        if not neighbors: return np.zeros(2)
-        avg_vel = np.mean([n.velocity for n in neighbors], axis=0)
-        norm = np.linalg.norm(avg_vel)
-        desired = (avg_vel / norm) * self.max_speed if norm > 0 else np.zeros(2)
-        return desired - self.velocity
+        if not neighbors:
+            return np.zeros(2)
+        
+        weighted_velocity_sum = np.zeros(2)
+        total_weight = 0.0
+
+        for neighbor in neighbors:
+            w = getattr(neighbor, 'merit', 1.0)
+            weighted_velocity_sum += neighbor.velocity * w
+            total_weight += w
+
+        if total_weight > 0:
+            avg_velocity = weighted_velocity_sum / total_weight
+            norm = np.linalg.norm(avg_velocity)
+            if norm > 0:
+                return (avg_velocity / norm) * self.max_speed - self.velocity
+        return np.zeros(2)
 
     def cohesion(self, neighbors):
-        if not neighbors: return np.zeros(2)
-        avg_pos = np.mean([n.pos for n in neighbors], axis=0)
-        desired = (avg_pos - self.pos)
-        dist = np.linalg.norm(desired)
-        if dist > 0:
-            desired = (desired / dist) * self.max_speed
-        return desired - self.velocity
+        if not neighbors:
+            return np.zeros(2)
+        
+        weighted_pos_sum = np.zeros(2)
+        total_weight = 0.0
+
+        for neighbor in neighbors:
+            w = getattr(neighbor, 'merit', 1.0)
+            weighted_pos_sum += neighbor.pos * w
+            total_weight += w
+
+        if total_weight > 0:
+            center_of_mass = weighted_pos_sum / total_weight
+            desired = center_of_mass - self.pos
+            norm = np.linalg.norm(desired)
+            if norm > 0:
+                return (desired / norm) * self.max_speed - self.velocity
+        return np.zeros(2)
+
+    def avoid_obstacles(self, neighbors):
+        avoid_force = np.zeros(2)
+        
+        obstacles = [n for n in neighbors if isinstance(n, Obstacle)]
+        if not obstacles:
+            return avoid_force
+
+        look_ahead = 25.0
+
+        for obstacle in obstacles:
+            to_obstacle = obstacle.pos - self.pos
+            dist = np.linalg.norm(to_obstacle)
+            
+            effective_dist = dist - obstacle.radius
+            
+            if effective_dist < look_ahead:
+                heading = self.velocity / (np.linalg.norm(self.velocity) + 1e-5)
+                dot = np.dot(heading, to_obstacle)
+
+                if dot > 0:
+                    repulsion = -to_obstacle / (dist + 1e-5)
+                    
+                    strength = (look_ahead - max(0.0, effective_dist)) / look_ahead
+                    avoid_force += repulsion * (strength ** 2) * self.max_speed
+
+        return avoid_force
