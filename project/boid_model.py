@@ -10,7 +10,7 @@ from variables import GRID_SIZE
 
 
 class BoidModel(Model):
-    def __init__(self, n, width, height, num_obstacles=15):
+    def __init__(self, num_migrators, num_predators, width, height, river_cost=3.0, forest_cost=2.0, grass_regrowth=0.001, num_obstacles=120):
         super().__init__()
         self.width, self.height = width, height
         self.space = ContinuousSpace(width, height, False)
@@ -28,7 +28,7 @@ class BoidModel(Model):
         seed = self.random.uniform(0.0, 1000.0)
 
         self.grass_map = np.ones((self.rows, self.cols), dtype=float)
-        self.grass_regrowth_rate = 0.00035
+        self.grass_regrowth_rate = grass_regrowth
 
         self.river_map = np.zeros((self.rows, self.cols), dtype=bool)
         
@@ -50,12 +50,12 @@ class BoidModel(Model):
                 self.terrain_height[i][j] = val
 
                 if self.river_map[i][j]:
-                    self.terrain_cost_map[i][j] = 12.0
+                    self.terrain_cost_map[i][j] = river_cost
                 elif val > self.mountain_threshold:
                     self.terrain_cost_map[i][j] = 8.0
                 elif val > self.forest_threshold:
-                    self.terrain_cost_map[i][j] = 3.5
-                else: 
+                    self.terrain_cost_map[i][j] = forest_cost
+                else:
                     self.terrain_cost_map[i][j] = 1.0
 
         self.flow_field = MigrationFlowField(self)
@@ -65,7 +65,7 @@ class BoidModel(Model):
         if len(available_starts) == 0:
             available_starts = np.arange(1, self.cols - 1)
 
-        for _ in range(n):
+        for _ in range(num_migrators):
             col = self.random.choice(available_starts)
             row = self.rows - 2 + self.random.uniform(-0.5, 0.5)
             
@@ -78,7 +78,7 @@ class BoidModel(Model):
             self.space.place_agent(migrator, start_pos)
             self.agents.add(migrator)
 
-        self.num_predators = 7
+        self.num_predators = num_predators
         for _ in range(self.num_predators):
             rx = self.random.uniform(100, self.width - 100)
             ry = self.random.uniform(self.height * 0.2, self.height * 0.8)

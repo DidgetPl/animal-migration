@@ -1,7 +1,10 @@
+import sys
+
 import numpy as np
 import pygame
 from boid_model import BoidModel
 from renderer import WorldRenderer
+from simulation_menu import get_simulation_config
 
 SCREEN_W, SCREEN_H = 1600, 900
 WORLD_W, WORLD_H = SCREEN_W * 2, SCREEN_H * 4
@@ -23,12 +26,28 @@ def clamp_camera(cam_x, cam_y, zoom):
     return cam_x, cam_y
 
 def main():
+    config = get_simulation_config()
+
+    if not config:
+        print("Symulacja anulowana przez użytkownika.")
+        sys.exit(0)
+
+    print("Uruchamianie symulacji z parametrami:", config)
+
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
     pygame.display.set_caption("Symulacja Migracji Gnu")
     clock = pygame.time.Clock()
     
-    model = BoidModel(160, WORLD_W, WORLD_H, num_obstacles=35)
+    model = BoidModel(
+        num_migrators=config["num_migrators"],
+        num_predators=config["num_predators"],
+        river_cost=config["river_cost"],
+        forest_cost=config["forest_cost"],
+        grass_regrowth=config["grass_regrowth"],
+        width=WORLD_W,
+        height=WORLD_H
+    )
     renderer = WorldRenderer(SCREEN_W, SCREEN_H)
 
     cam_x, cam_y = 0.0, 0.0
@@ -37,7 +56,7 @@ def main():
 
     while True:
         for event in pygame.event.get():
-            if event.type == pygame.QUIT: 
+            if event.type == pygame.QUIT:
                 return
             
             elif event.type == pygame.MOUSEWHEEL:
