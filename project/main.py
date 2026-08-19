@@ -1,29 +1,13 @@
 import sys
 
-import numpy as np
 import pygame
 from boid_model import BoidModel
+from camera import Camera
 from renderer import WorldRenderer
 from simulation_menu import get_simulation_config
+from simulation_saver import SimulationRecorder
 
 SCREEN_W, SCREEN_H = 1600, 900
-WORLD_W, WORLD_H = SCREEN_W * 2, SCREEN_H * 4
-
-def clamp_camera(cam_x, cam_y, zoom):
-    view_w = SCREEN_W / zoom
-    view_h = SCREEN_H / zoom
-
-    if view_w >= WORLD_W:
-        cam_x = (WORLD_W - view_w) / 2
-    else:
-        cam_x = np.clip(cam_x, 0, WORLD_W - view_w)
-
-    if view_h >= WORLD_H:
-        cam_y = (WORLD_H - view_h) / 2
-    else:
-        cam_y = np.clip(cam_y, 0, WORLD_H - view_h)
-
-    return cam_x, cam_y
 
 def main():
     config = get_simulation_config()
@@ -34,58 +18,58 @@ def main():
 
     print("Uruchamianie symulacji z parametrami:", config)
 
+    world_w = int(SCREEN_W * config["world_w_mult"])
+    world_h = int(SCREEN_H * config["world_h_mult"])
+
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
     pygame.display.set_caption("Symulacja Migracji Gnu")
     clock = pygame.time.Clock()
-    
+
+    recorder = None
+    if config.get("record_simulation", False):
+        recorder = SimulationRecorder()
+        recorder.set_metadata(config, world_w, world_h)
+
     model = BoidModel(
         num_migrators=config["num_migrators"],
         num_predators=config["num_predators"],
         river_cost=config["river_cost"],
         forest_cost=config["forest_cost"],
         grass_regrowth=config["grass_regrowth"],
-        width=int(SCREEN_W * config["world_w_mult"]),
-        height=int(SCREEN_H * config["world_h_mult"]),
+        width=world_w,
+        height=world_h,
         mountain_threshold=config["mountain_threshold"],
         forest_threshold=config["forest_threshold"],
         enable_river=config["enable_river"],
         num_obstacles=config["num_obstacles"]
     )
+    
     renderer = WorldRenderer(SCREEN_W, SCREEN_H)
+    camera = Camera(SCREEN_W, SCREEN_H, world_w, world_h)
 
-    cam_x, cam_y = 0.0, 0.0
-    zoom = 1.0
-    dragging = False
+    frame_count = 0
+    running = True
 
-    while True:
+    while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                return
-            
-            elif event.type == pygame.MOUSEWHEEL:
-                zoom = float(np.clip(zoom + event.y * 0.05, 0.3, 2.5))
-                cam_x, cam_y = clamp_camera(cam_x, cam_y, zoom)
-
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1: 
-                    dragging = True
-
-            elif event.type == pygame.MOUSEBUTTONUP:
-                if event.button == 1: 
-                    dragging = False
-
-            elif event.type == pygame.MOUSEMOTION and dragging:
-                dx, dy = event.rel
-                cam_x -= dx / zoom
-                cam_y -= dy / zoom
-                cam_x, cam_y = clamp_camera(cam_x, cam_y, zoom)
+                running = False
+            else:
+                camera.handle_event(event)
 
         model.step()
+    
+        if recorder:
+            recorder.capture_frame(frame_count, model.agents)
 
-        renderer.render(screen, model, cam_x, cam_y, zoom)
-        
+        renderer.render(screen, model, camera.x, camera.y, camera.zoom)
+        frame_count += 1
+
         clock.tick(60)
+
+    if recorder:
+        recorder.save_to_file()
 
 if __name__ == "__main__":
     main()

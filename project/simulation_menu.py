@@ -21,7 +21,8 @@ DEFAULTS = {
     "hunger_rate": 0.035,
     "river_cost": 3.0,
     "forest_cost": 2.0,
-    "grass_regrowth": 0.001
+    "grass_regrowth": 0.001,
+    "record_simulation": False
 }
 
 
@@ -33,7 +34,7 @@ class SimulationMenu(QWidget):
 
     def init_ui(self):
         self.setWindowTitle("Symulator Migracji - Konfiguracja Środowiska")
-        self.setMinimumSize(850, 600)
+        self.setMinimumSize(850, 620)
 
         root_layout = QVBoxLayout(self)
 
@@ -162,6 +163,14 @@ class SimulationMenu(QWidget):
         group_metabolism.setLayout(layout_metabolism)
         right_column.addWidget(group_metabolism)
 
+        group_record = QGroupBox("Rejestracja i Zapis")
+        layout_record = QFormLayout()
+
+        self.chk_record_sim = QCheckBox("Włącz rejestrację symulacji do pliku")
+        layout_record.addRow("Zapis pozycji agentów:", self.chk_record_sim)
+        group_record.setLayout(layout_record)
+        right_column.addWidget(group_record)
+
         right_column.addStretch()
 
         columns_layout.addLayout(right_column)
@@ -211,6 +220,8 @@ class SimulationMenu(QWidget):
         self.spin_river_cost.setValue(DEFAULTS["river_cost"])
         self.spin_forest_cost.setValue(DEFAULTS["forest_cost"])
         self.spin_grass_regrowth.setValue(DEFAULTS["grass_regrowth"])
+        
+        self.chk_record_sim.setChecked(DEFAULTS["record_simulation"])
 
     def start_simulation(self):
         self.config = {
@@ -228,7 +239,8 @@ class SimulationMenu(QWidget):
             "hunger_rate": self.spin_hunger_rate.value(),
             "river_cost": self.spin_river_cost.value(),
             "forest_cost": self.spin_forest_cost.value(),
-            "grass_regrowth": self.spin_grass_regrowth.value()
+            "grass_regrowth": self.spin_grass_regrowth.value(),
+            "record_simulation": self.chk_record_sim.isChecked()
         }
         self.close()
 
