@@ -1,5 +1,5 @@
 import numpy as np
-from boids.obstacle import Obstacle
+from simulation.boids.obstacle import Obstacle
 from variables import GRID_SIZE
 
 

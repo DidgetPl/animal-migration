@@ -6,7 +6,7 @@ import time
 
 import numpy as np
 
-REPLAYS_DIR = "replays"
+REPLAYS_DIR = "project\\replay\\replays"
 
 def ensure_replays_dir():
     if not os.path.exists(REPLAYS_DIR):

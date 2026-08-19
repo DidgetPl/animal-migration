@@ -1,11 +1,11 @@
 import numpy as np
-from boids.migrator import Migrator
-from boids.obstacle import Obstacle
-from boids.predator import Predator
-from flow_field import MigrationFlowField
 from mesa import Model
 from mesa.space import ContinuousSpace
 from noise import snoise2
+from simulation.boids.migrator import Migrator
+from simulation.boids.obstacle import Obstacle
+from simulation.boids.predator import Predator
+from simulation.flow_field import MigrationFlowField
 from variables import GRID_SIZE
 
 

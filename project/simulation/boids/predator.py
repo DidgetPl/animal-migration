@@ -1,5 +1,5 @@
 import numpy as np
-from boids.base_boid import BaseBoid
+from simulation.boids.base_boid import BaseBoid
 
 
 class Predator(BaseBoid):

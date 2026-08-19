@@ -2,12 +2,12 @@ import sys
 
 import numpy as np
 import pygame
-from boids.migrator import Migrator
-from boids.obstacle import Obstacle
-from boids.predator import Predator
 from camera import Camera
 from renderer import WorldRenderer
-from simulation_saver import SimulationLoader
+from replay.simulation_saver import SimulationLoader
+from simulation.boids.migrator import Migrator
+from simulation.boids.obstacle import Obstacle
+from simulation.boids.predator import Predator
 from variables import SCREEN_H, SCREEN_W
 
 

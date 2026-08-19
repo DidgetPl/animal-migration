@@ -3,11 +3,13 @@ import re
 import sys
 from datetime import datetime
 
+import six
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog,
                                QDoubleSpinBox, QFormLayout, QGroupBox,
                                QHBoxLayout, QLabel, QPushButton, QScrollArea,
                                QSpinBox, QVBoxLayout, QWidget)
+from replay.replay_utils import get_available_replays
 
 REPLAYS_DIR = "replays"
 
@@ -30,42 +32,7 @@ DEFAULTS = {
     "record_simulation": False
 }
 
-
-def format_replay_filename(filename: str) -> str:
-    """Przekształca 'replay_YYYY-MM-DD_HH-MM-SS.bin.gz' w czytelną etykietę."""
-    basename = os.path.basename(filename)
-    match = re.search(r"(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})", basename)
-    if match:
-        date_str, time_str = match.groups()
-        try:
-            dt = datetime.strptime(f"{date_str}_{time_str}", "%Y-%m-%d_%H-%M-%S")
-            return dt.strftime("Nagranie z %d.%m.%Y r., godz. %H:%M:%S")
-        except ValueError:
-            pass
-    return basename
-
-
-def get_available_replays():
-    """Skanuje folder replays/ i zwraca powtórki posortowane od najnowszej."""
-    if not os.path.exists(REPLAYS_DIR):
-        os.makedirs(REPLAYS_DIR)
-
-    replays = []
-    for f in os.listdir(REPLAYS_DIR):
-        if f.endswith(".bin.gz"):
-            full_path = os.path.join(REPLAYS_DIR, f)
-            label = format_replay_filename(f)
-            replays.append({
-                "path": full_path,
-                "label": label,
-                "mtime": os.path.getmtime(full_path)
-            })
-
-    replays.sort(key=lambda x: x["mtime"], reverse=True)
-    return replays
-
-
-class SimulationMenu(QDialog):
+class ConfigurationMenu(QDialog):
     def __init__(self):
         super().__init__()
         self.config = None
@@ -261,7 +228,6 @@ class SimulationMenu(QDialog):
         self.reset_to_defaults()
 
     def refresh_replays(self):
-        """Skanuje podfolder replays/ i aktualizuje rozwijaną listę."""
         self.combo_replays.clear()
         replays = get_available_replays()
 
@@ -340,7 +306,7 @@ def get_simulation_config():
     if not app:
         app = QApplication(sys.argv)
 
-    menu = SimulationMenu()
+    menu = ConfigurationMenu()
     if menu.exec() == QDialog.Accepted:
         return menu.config
     return None
