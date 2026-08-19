@@ -46,7 +46,11 @@ def main():
         forest_cost=config["forest_cost"],
         grass_regrowth=config["grass_regrowth"],
         width=int(SCREEN_W * config["world_w_mult"]),
-        height=int(SCREEN_H * config["world_h_mult"])
+        height=int(SCREEN_H * config["world_h_mult"]),
+        mountain_threshold=config["mountain_threshold"],
+        forest_threshold=config["forest_threshold"],
+        enable_river=config["enable_river"],
+        num_obstacles=config["num_obstacles"]
     )
     renderer = WorldRenderer(SCREEN_W, SCREEN_H)
 

@@ -5,9 +5,9 @@ from variables import GRID_SIZE
 
 
 class Migrator(BaseBoid):
-    def __init__(self, model):
+    def __init__(self, model, max_speed=3.0, hunger_rate=0.035):
         super().__init__(model)
-        self.max_speed = 3.0
+        self.max_speed = max_speed
         self.max_force = 0.2 #TODO: rozpisać to
         self.velocity = np.array([model.random.uniform(-1, 1), -1.0], dtype=np.float32)
         
@@ -18,7 +18,7 @@ class Migrator(BaseBoid):
 
         self.hunger = model.random.uniform(10, 40)
         self.max_hunger = 100.0
-        self.hunger_rate = 0.035
+        self.hunger_rate = hunger_rate
         self.is_feeding = False
 
         self.merit_score = 1.0
@@ -70,9 +70,9 @@ class Migrator(BaseBoid):
         is_in_river = getattr(self.model, 'river_map', np.zeros((self.model.rows, self.model.cols)))[grid_y][grid_x]
         
         if is_in_river:
-            current_max_speed = self.max_speed * 0.3
+            current_max_speed = self.max_speed * self.model.river_speed_mod
             self.is_feeding = False
-            self.velocity[1] += 0.02
+            self.velocity[1] += self.model.river_stream
 
         return current_max_speed
 

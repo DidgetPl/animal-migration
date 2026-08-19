@@ -10,7 +10,9 @@ from variables import GRID_SIZE
 
 
 class BoidModel(Model):
-    def __init__(self, num_migrators, num_predators, width, height, river_cost=3.0, forest_cost=2.0, grass_regrowth=0.001, num_obstacles=120):
+    def __init__(self, num_migrators, num_predators, width, height, river_cost=3.0, forest_cost=2.0,
+                grass_regrowth=0.001, num_obstacles=120, mountain_threshold=0.56, forest_threshold=0.28,
+                enable_river=True, migrator_speed=3.0, river_speed_mod=0.3, river_stream=0.02, hunger_rate=0.035):
         super().__init__()
         self.width, self.height = width, height
         self.space = ContinuousSpace(width, height, False)
@@ -22,17 +24,20 @@ class BoidModel(Model):
         self.terrain_cost_map = np.zeros((self.rows, self.cols))
         self.terrain_height = np.zeros((self.rows, self.cols))
 
-        self.mountain_threshold = 0.56
-        self.forest_threshold = 0.28
-        
+        self.mountain_threshold = mountain_threshold
+        self.forest_threshold = forest_threshold
+
         seed = self.random.uniform(0.0, 1000.0)
 
         self.grass_map = np.ones((self.rows, self.cols), dtype=float)
         self.grass_regrowth_rate = grass_regrowth
 
         self.river_map = np.zeros((self.rows, self.cols), dtype=bool)
-        
-        self._generate_river()
+        self.river_speed_mod = river_speed_mod
+        self.river_stream = river_stream
+
+        if enable_river:
+            self._generate_river()
         
         for i in range(self.rows):
             for j in range(self.cols):
@@ -74,7 +79,7 @@ class BoidModel(Model):
                 row * GRID_SIZE + GRID_SIZE / 2
             ])
             
-            migrator = Migrator(self)
+            migrator = Migrator(self, max_speed=migrator_speed, hunger_rate=hunger_rate)
             self.space.place_agent(migrator, start_pos)
             self.agents.add(migrator)
 
@@ -87,8 +92,8 @@ class BoidModel(Model):
             self.space.place_agent(predator, [rx, ry])
             self.agents.add(predator)
 
-        self.num_point_obstacles = 120
-        for _ in range(self.num_point_obstacles):
+        self.num_obstacles = num_obstacles
+        for _ in range(self.num_obstacles):
             rx = self.random.uniform(20, self.width - 20)
             ry = self.random.uniform(20, self.height - 20)
             
