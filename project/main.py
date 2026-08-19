@@ -45,8 +45,8 @@ def main():
         river_cost=config["river_cost"],
         forest_cost=config["forest_cost"],
         grass_regrowth=config["grass_regrowth"],
-        width=WORLD_W,
-        height=WORLD_H
+        width=int(SCREEN_W * config["world_w_mult"]),
+        height=int(SCREEN_H * config["world_h_mult"])
     )
     renderer = WorldRenderer(SCREEN_W, SCREEN_H)
 

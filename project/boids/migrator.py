@@ -8,7 +8,7 @@ class Migrator(BaseBoid):
     def __init__(self, model):
         super().__init__(model)
         self.max_speed = 3.0
-        self.max_force = 0.2
+        self.max_force = 0.2 #TODO: rozpisać to
         self.velocity = np.array([model.random.uniform(-1, 1), -1.0], dtype=np.float32)
         
         self.scared = False
