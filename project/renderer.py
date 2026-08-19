@@ -5,6 +5,18 @@ from boids.obstacle import Obstacle
 from boids.predator import Predator
 from variables import GRID_SIZE
 
+RIVER_SHALLOW_COLOR = (70, 150, 200)
+RIVER_DEEP_COLOR = (20, 60, 130)
+MOUNTAIN_LOW_COLOR = (110, 100, 90)
+MOUNTAIN_HIGH_COLOR = (45, 40, 35)
+FOREST_LOW_COLOR = (141, 143, 41)
+FOREST_HIGH_COLOR = (65, 75, 20)
+GRASS_LOW_COLOR = (220, 188, 104)
+GRASS_HIGH_COLOR = (174, 127, 77)
+GNU_COLOR = (101, 67, 33)
+SCARED_GNU_COLOR = (202, 72, 21)
+FEEDING_GNU_COLOR = (196, 164, 132)
+PREDATOR_COLOR = (255, 50, 50)
 
 class WorldRenderer:
     def __init__(self, screen_w, screen_h, flip=True):
@@ -37,26 +49,26 @@ class WorldRenderer:
                     wave = np.sin(r * 0.4 + time_factor) * 0.1
                     water_depth = np.clip(val + wave, 0.0, 1.0)
 
-                    c_shallow = pygame.Color(70, 150, 200)
-                    c_deep = pygame.Color(20, 60, 130)
+                    c_shallow = pygame.Color(RIVER_SHALLOW_COLOR)
+                    c_deep = pygame.Color(RIVER_DEEP_COLOR)
                     color = c_shallow.lerp(c_deep, water_depth)
 
                 elif val > model.mountain_threshold:
                     factor = (val - model.mountain_threshold) / (1.0 - model.mountain_threshold)
-                    c_low = pygame.Color(110, 100, 90)
-                    c_high = pygame.Color(45, 40, 35)
+                    c_low = pygame.Color(MOUNTAIN_LOW_COLOR)
+                    c_high = pygame.Color(MOUNTAIN_HIGH_COLOR)
                     color = c_low.lerp(c_high, factor)
                     
                 elif val > model.forest_threshold:
                     factor = (val - model.forest_threshold) / (model.mountain_threshold - model.forest_threshold)
-                    c_low = pygame.Color(45, 150, 45)
-                    c_high = pygame.Color(20, 75, 20)
+                    c_low = pygame.Color(FOREST_LOW_COLOR)
+                    c_high = pygame.Color(FOREST_HIGH_COLOR)
                     color = c_low.lerp(c_high, factor)
                     
                 else:
                     factor = val / model.forest_threshold
-                    c_low = pygame.Color(205, 225, 135)
-                    c_high = pygame.Color(135, 195, 65)
+                    c_low = pygame.Color(GRASS_LOW_COLOR)
+                    c_high = pygame.Color(GRASS_HIGH_COLOR)
                     color = c_low.lerp(c_high, factor)
 
                 rect = pygame.Rect(
@@ -96,11 +108,11 @@ class WorldRenderer:
                 
                 if isinstance(agent, Migrator):
                     if getattr(agent, 'scared', False):
-                        color = (161, 47, 18)
+                        color = SCARED_GNU_COLOR
                     elif getattr(agent, 'is_feeding', False):
-                        color = (196, 164, 132)
+                        color = FEEDING_GNU_COLOR
                     else:
-                        color = (101, 67, 33)
+                        color = GNU_COLOR
 
                     p1 = (rx + np.cos(angle) * size, ry + np.sin(angle) * size)
                     p2 = (rx + np.cos(angle + 2.5) * size / 2, ry + np.sin(angle + 2.5) * size / 2)
@@ -112,7 +124,7 @@ class WorldRenderer:
                     p1 = (rx + np.cos(angle) * p_size, ry + np.sin(angle) * p_size)
                     p2 = (rx + np.cos(angle + 2.3) * p_size / 2, ry + np.sin(angle + 2.3) * p_size / 2)
                     p3 = (rx + np.cos(angle - 2.3) * p_size / 2, ry + np.sin(angle - 2.3) * p_size / 2)
-                    pygame.draw.polygon(screen, (255, 0, 50), [p1, p2, p3])
+                    pygame.draw.polygon(screen, PREDATOR_COLOR, [p1, p2, p3])
 
     def render(self, screen, model, cam_x, cam_y, zoom):
         screen.fill((20, 20, 25))

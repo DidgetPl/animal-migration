@@ -28,7 +28,7 @@ def astar(grid, start, goal, limit=20000):
             continue
         closed_set.add(current)
 
-        if len(closed_set) > limit: 
+        if len(closed_set) > limit:
             break
 
         for dx, dy in [(0,1), (1,0), (0,-1), (-1,0), (1,1), (1,-1), (-1,1), (-1,-1)]:
