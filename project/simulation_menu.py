@@ -1,10 +1,15 @@
+import os
+import re
 import sys
+from datetime import datetime
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QApplication, QCheckBox, QDoubleSpinBox,
-                               QFormLayout, QGroupBox, QHBoxLayout, QLabel,
-                               QPushButton, QScrollArea, QSpinBox, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog,
+                               QDoubleSpinBox, QFormLayout, QGroupBox,
+                               QHBoxLayout, QLabel, QPushButton, QScrollArea,
+                               QSpinBox, QVBoxLayout, QWidget)
+
+REPLAYS_DIR = "replays"
 
 DEFAULTS = {
     "world_w_mult": 2.0,
@@ -26,29 +31,83 @@ DEFAULTS = {
 }
 
 
-class SimulationMenu(QWidget):
+def format_replay_filename(filename: str) -> str:
+    """Przekształca 'replay_YYYY-MM-DD_HH-MM-SS.bin.gz' w czytelną etykietę."""
+    basename = os.path.basename(filename)
+    match = re.search(r"(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})", basename)
+    if match:
+        date_str, time_str = match.groups()
+        try:
+            dt = datetime.strptime(f"{date_str}_{time_str}", "%Y-%m-%d_%H-%M-%S")
+            return dt.strftime("Nagranie z %d.%m.%Y r., godz. %H:%M:%S")
+        except ValueError:
+            pass
+    return basename
+
+
+def get_available_replays():
+    """Skanuje folder replays/ i zwraca powtórki posortowane od najnowszej."""
+    if not os.path.exists(REPLAYS_DIR):
+        os.makedirs(REPLAYS_DIR)
+
+    replays = []
+    for f in os.listdir(REPLAYS_DIR):
+        if f.endswith(".bin.gz"):
+            full_path = os.path.join(REPLAYS_DIR, f)
+            label = format_replay_filename(f)
+            replays.append({
+                "path": full_path,
+                "label": label,
+                "mtime": os.path.getmtime(full_path)
+            })
+
+    replays.sort(key=lambda x: x["mtime"], reverse=True)
+    return replays
+
+
+class SimulationMenu(QDialog):
     def __init__(self):
         super().__init__()
         self.config = None
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("Symulator Migracji - Konfiguracja Środowiska")
-        self.setMinimumSize(850, 620)
+        self.setWindowTitle("Symulator Migracji - Menu & Konfiguracja")
+        self.setMinimumSize(880, 680)
 
         root_layout = QVBoxLayout(self)
 
-        title = QLabel("Ustawienia Symulacji i Środowiska")
+        title = QLabel("Ustawienia Symulacji i Odtwarzacz Powtórek")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 20px; font-weight: bold; margin-top: 5px; margin-bottom: 10px;")
+        title.setStyleSheet("font-size: 20px; font-weight: bold; margin-top: 5px; margin-bottom: 5px;")
         root_layout.addWidget(title)
+
+        group_replay = QGroupBox("Odtwarzanie Nagranych Powtórek")
+        layout_replay = QHBoxLayout()
+
+        self.combo_replays = QComboBox()
+        self.btn_refresh_replays = QPushButton("🔄 Odśwież")
+        self.btn_refresh_replays.clicked.connect(self.refresh_replays)
+
+        self.btn_start_replay = QPushButton("▶ Odtwórz Wybraną Powtórkę")
+        self.btn_start_replay.setStyleSheet("font-weight: bold; padding: 6px 15px; background-color: #1976d2; color: white;")
+        self.btn_start_replay.clicked.connect(self.start_replay)
+
+        layout_replay.addWidget(QLabel("Wybierz powtórkę:"))
+        layout_replay.addWidget(self.combo_replays, stretch=1)
+        layout_replay.addWidget(self.btn_refresh_replays)
+        layout_replay.addWidget(self.btn_start_replay)
+        group_replay.setLayout(layout_replay)
+
+        root_layout.addWidget(group_replay)
+
+        self.refresh_replays()
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_content = QWidget()
-        
-        columns_layout = QHBoxLayout(scroll_content)
 
+        columns_layout = QHBoxLayout(scroll_content)
         left_column = QVBoxLayout()
 
         group_world = QGroupBox("Wymiary Świata (Wielokrotności Ekranu)")
@@ -186,9 +245,9 @@ class SimulationMenu(QWidget):
 
         self.btn_cancel = QPushButton("Wyjście")
         self.btn_cancel.setStyleSheet("padding: 8px 15px;")
-        self.btn_cancel.clicked.connect(self.close)
+        self.btn_cancel.clicked.connect(self.reject)
 
-        self.btn_start = QPushButton("Uruchom Symulację")
+        self.btn_start = QPushButton("Uruchom Nową Symulację")
         self.btn_start.setStyleSheet("font-weight: bold; padding: 8px 20px; background-color: #2e7d32; color: white;")
         self.btn_start.clicked.connect(self.start_simulation)
 
@@ -201,6 +260,36 @@ class SimulationMenu(QWidget):
 
         self.reset_to_defaults()
 
+    def refresh_replays(self):
+        """Skanuje podfolder replays/ i aktualizuje rozwijaną listę."""
+        self.combo_replays.clear()
+        replays = get_available_replays()
+
+        if replays:
+            for item in replays:
+                self.combo_replays.addItem(item["label"], userData=item["path"])
+            self.combo_replays.setEnabled(True)
+            self.btn_start_replay.setEnabled(True)
+        else:
+            self.combo_replays.addItem("Brak zapisanych powtórek w folderze 'replays'")
+            self.combo_replays.setEnabled(False)
+            self.btn_start_replay.setEnabled(False)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.reject()
+        else:
+            super().keyPressEvent(event)
+
+    def start_replay(self):
+        selected_file = self.combo_replays.currentData()
+        if selected_file:
+            self.config = {
+                "mode": "replay",
+                "replay_file": selected_file
+            }
+            self.accept()
+
     def reset_to_defaults(self):
         self.spin_world_w.setValue(DEFAULTS["world_w_mult"])
         self.spin_world_h.setValue(DEFAULTS["world_h_mult"])
@@ -208,23 +297,24 @@ class SimulationMenu(QWidget):
         self.spin_forest_thresh.setValue(DEFAULTS["forest_threshold"])
         self.chk_river.setChecked(DEFAULTS["enable_river"])
         self.spin_obstacles.setValue(DEFAULTS["num_obstacles"])
-        
+
         self.spin_migrators.setValue(DEFAULTS["num_migrators"])
         self.spin_predators.setValue(DEFAULTS["num_predators"])
-        
+
         self.spin_max_speed.setValue(DEFAULTS["max_speed"])
         self.spin_river_speed_mod.setValue(DEFAULTS["river_speed_mod"])
         self.spin_river_current.setValue(DEFAULTS["river_current"])
         self.spin_hunger_rate.setValue(DEFAULTS["hunger_rate"])
-        
+
         self.spin_river_cost.setValue(DEFAULTS["river_cost"])
         self.spin_forest_cost.setValue(DEFAULTS["forest_cost"])
         self.spin_grass_regrowth.setValue(DEFAULTS["grass_regrowth"])
-        
+
         self.chk_record_sim.setChecked(DEFAULTS["record_simulation"])
 
     def start_simulation(self):
         self.config = {
+            "mode": "run",
             "world_w_mult": self.spin_world_w.value(),
             "world_h_mult": self.spin_world_h.value(),
             "mountain_threshold": self.spin_mountain_thresh.value(),
@@ -242,7 +332,7 @@ class SimulationMenu(QWidget):
             "grass_regrowth": self.spin_grass_regrowth.value(),
             "record_simulation": self.chk_record_sim.isChecked()
         }
-        self.close()
+        self.accept()
 
 
 def get_simulation_config():
@@ -251,10 +341,9 @@ def get_simulation_config():
         app = QApplication(sys.argv)
 
     menu = SimulationMenu()
-    menu.show()
-    app.exec()
-
-    return menu.config
+    if menu.exec() == QDialog.Accepted:
+        return menu.config
+    return None
 
 
 if __name__ == "__main__":

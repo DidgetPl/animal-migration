@@ -4,20 +4,13 @@ import pygame
 from boid_model import BoidModel
 from camera import Camera
 from renderer import WorldRenderer
+from replay_player import run_replay
 from simulation_menu import get_simulation_config
 from simulation_saver import SimulationRecorder
+from variables import SCREEN_H, SCREEN_W
 
-SCREEN_W, SCREEN_H = 1600, 900
 
-def main():
-    config = get_simulation_config()
-
-    if not config:
-        print("Symulacja anulowana przez użytkownika.")
-        sys.exit(0)
-
-    print("Uruchamianie symulacji z parametrami:", config)
-
+def run_live_simulation(config):
     world_w = int(SCREEN_W * config["world_w_mult"])
     world_h = int(SCREEN_H * config["world_h_mult"])
 
@@ -29,7 +22,6 @@ def main():
     recorder = None
     if config.get("record_simulation", False):
         recorder = SimulationRecorder()
-        recorder.set_metadata(config, world_w, world_h)
 
     model = BoidModel(
         num_migrators=config["num_migrators"],
@@ -44,8 +36,11 @@ def main():
         enable_river=config["enable_river"],
         num_obstacles=config["num_obstacles"]
     )
-    
-    renderer = WorldRenderer(SCREEN_W, SCREEN_H)
+
+    if recorder:
+        recorder.set_metadata(config, model)
+
+    renderer = WorldRenderer(SCREEN_W, SCREEN_H, flip=False)
     camera = Camera(SCREEN_W, SCREEN_H, world_w, world_h)
 
     frame_count = 0
@@ -55,21 +50,46 @@ def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
             else:
                 camera.handle_event(event)
 
         model.step()
-    
+
         if recorder:
             recorder.capture_frame(frame_count, model.agents)
 
         renderer.render(screen, model, camera.x, camera.y, camera.zoom)
-        frame_count += 1
+        pygame.display.flip()
 
+        frame_count += 1
         clock.tick(60)
 
     if recorder:
         recorder.save_to_file()
+
+    pygame.quit()
+
+
+def main():
+    while True:
+        config = get_simulation_config()
+
+        if not config:
+            print("Zamknięto menu. Zamykanie aplikacji...")
+            sys.exit(0)
+
+        if config.get("mode") == "replay":
+            replay_file = config.get("replay_file")
+            print(f"Uruchamianie odtwarzacza dla nagrania: {replay_file}")
+            run_replay(replay_file)
+
+        elif config.get("mode") == "run":
+            print("Uruchamianie symulacji na żywo...")
+            run_live_simulation(config)
+
 
 if __name__ == "__main__":
     main()

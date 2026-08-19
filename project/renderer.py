@@ -7,9 +7,10 @@ from variables import GRID_SIZE
 
 
 class WorldRenderer:
-    def __init__(self, screen_w, screen_h):
+    def __init__(self, screen_w, screen_h, flip=True):
         self.screen_w = screen_w
         self.screen_h = screen_h
+        self.flip = flip
 
     def world_to_screen(self, pos, cam_x, cam_y, zoom):
         sx = (pos[0] - cam_x) * zoom
@@ -117,4 +118,5 @@ class WorldRenderer:
         screen.fill((20, 20, 25))
         self.draw_terrain(screen, model, cam_x, cam_y, zoom)
         self.draw_agents_and_obstacles(screen, model, cam_x, cam_y, zoom)
-        pygame.display.flip()
+        if self.flip:
+            pygame.display.flip()
