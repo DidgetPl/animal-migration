@@ -2,7 +2,8 @@ import os
 import re
 from datetime import datetime
 
-REPLAYS_DIR = "project\\replay\\replays"
+from variables import REPLAYS_DIR
+
 
 def format_replay_filename(filename: str) -> str:
     basename = os.path.basename(filename)

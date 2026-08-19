@@ -1,50 +1,49 @@
+import gzip
+import os
+import pickle
+import struct
 import sys
 
 import numpy as np
 import pygame
 from camera import Camera
 from renderer import WorldRenderer
-from replay.simulation_saver import SimulationLoader
-from simulation.boids.migrator import Migrator
-from simulation.boids.obstacle import Obstacle
-from simulation.boids.predator import Predator
-from variables import SCREEN_H, SCREEN_W
+from replay.dummy_model import DummyModel
+from variables import REPLAYS_DIR, SCREEN_H, SCREEN_W
 
 
-class DummyModel:
-    def __init__(self, metadata):
-        self.cols = metadata["cols"]
-        self.rows = metadata["rows"]
-        self.mountain_threshold = metadata["mountain_threshold"]
-        self.forest_threshold = metadata["forest_threshold"]
-        self.terrain_height = metadata["terrain_height"]
-        self.river_map = metadata.get("river_map")
-        self.agents = []
+class ReplayLoader:
+    def __init__(self, input_filename: str):
+        if not os.path.exists(input_filename) and not input_filename.startswith(REPLAYS_DIR):
+            input_filename = os.path.join(REPLAYS_DIR, input_filename)
+        self.input_filename = input_filename
 
-    def update_frame(self, frame_agent_list):
-        self.agents = []
-        for a in frame_agent_list:
-            a_type = a["type"]
+    def load_all(self):
+        agent_struct = struct.Struct("<HfffBB")
+        agent_size = agent_struct.size
 
-            if a_type == 0:
-                agent_obj = Migrator.__new__(Migrator)
-            elif a_type == 1:
-                agent_obj = Predator.__new__(Predator)
-            else:
-                agent_obj = Obstacle.__new__(Obstacle)
+        with gzip.open(self.input_filename, "rb") as f:
+            meta_len = struct.unpack("<I", f.read(4))[0]
+            metadata = pickle.loads(f.read(meta_len))
 
-            agent_obj.pos = np.array([a["x"], a["y"]])
-            agent_obj.velocity = np.array([np.cos(a["angle"]), np.sin(a["angle"])])
+            total_frames = struct.unpack("<I", f.read(4))[0]
+            frames_data = []
 
-            if a_type in (2, 3):
-                agent_obj.obstacle_type = "rock" if a_type == 2 else "tree"
-                agent_obj.radius = a["flags"] / 10.0
-            else:
-                agent_obj.scared = bool(a["flags"] & 1)
-                agent_obj.is_feeding = bool(a["flags"] & 2)
+            for _ in range(total_frames):
+                frame_idx, num_agents = struct.unpack("<IH", f.read(6))
+                agents = []
+                
+                for _ in range(num_agents):
+                    a_bytes = f.read(agent_size)
+                    a_id, x, y, angle, a_type, flags = agent_struct.unpack(a_bytes)
+                    agents.append({
+                        "id": a_id, "x": x, "y": y, 
+                        "angle": angle, "type": a_type, "flags": flags
+                    })
+                
+                frames_data.append({"frame": frame_idx, "agents": agents})
 
-            self.agents.append(agent_obj)
-
+        return metadata, frames_data
 
 def draw_hud(screen, font, frame_idx, total_frames, is_paused, speed):
     status_str = "PAUZA" if is_paused else ("WSTECZ" if speed < 0 else "ODTWARZANIE")
@@ -84,7 +83,7 @@ def run_replay(filename):
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("Consolas", 14, bold=True)
 
-    loader = SimulationLoader(filename)
+    loader = ReplayLoader(filename)
     metadata, frames = loader.load_all()
 
     dummy_model = DummyModel(metadata)

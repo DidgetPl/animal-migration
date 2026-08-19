@@ -2,8 +2,8 @@ import numpy as np
 import pygame
 from camera import Camera
 from renderer import WorldRenderer
-from replay.simulation_saver import SimulationRecorder
 from simulation.boid_model import BoidModel
+from simulation.simulation_recorder import SimulationRecorder
 from variables import SCREEN_H, SCREEN_W
 
 

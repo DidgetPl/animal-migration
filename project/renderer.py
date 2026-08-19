@@ -17,6 +17,10 @@ GNU_COLOR = (101, 67, 33)
 SCARED_GNU_COLOR = (202, 72, 21)
 FEEDING_GNU_COLOR = (196, 164, 132)
 PREDATOR_COLOR = (255, 50, 50)
+TREE_INTERIOR_COLOR = (101, 110, 12)
+TREE_OUTLINE_COLOR = (64, 72, 8)
+ROCK_INTERIOR_COLOR = (80, 80, 85)
+ROCK_OUTLINE_COLOR = (50, 50, 55)
 
 class WorldRenderer:
     def __init__(self, screen_w, screen_h, flip=True):
@@ -93,12 +97,12 @@ class WorldRenderer:
                 radius = getattr(agent, 'radius', 8.0) * zoom
                 
                 if agent.obstacle_type == "rock":
-                    pygame.draw.circle(screen, (80, 80, 85), (int(rx), int(ry)), max(2, int(radius)))
-                    pygame.draw.circle(screen, (50, 50, 55), (int(rx), int(ry)), max(2, int(radius)), width=max(1, int(2 * zoom)))
+                    pygame.draw.circle(screen, ROCK_OUTLINE_COLOR, (int(rx), int(ry)), max(2, int(radius)))
+                    pygame.draw.circle(screen, ROCK_INTERIOR_COLOR, (int(rx), int(ry)), max(2, int(radius)), width=max(1, int(2 * zoom)))
                 
                 elif agent.obstacle_type == "tree":
-                    pygame.draw.circle(screen, (15, 70, 15), (int(rx), int(ry)), max(3, int(radius)))
-                    pygame.draw.circle(screen, (35, 120, 35), (int(rx), int(ry)), max(1, int(radius * 0.6)))
+                    pygame.draw.circle(screen, TREE_OUTLINE_COLOR, (int(rx), int(ry)), max(3, int(radius)))
+                    pygame.draw.circle(screen, TREE_INTERIOR_COLOR, (int(rx), int(ry)), max(1, int(radius * 0.6)))
 
             elif isinstance(agent, (Migrator, Predator)):
                 size = 8 * zoom

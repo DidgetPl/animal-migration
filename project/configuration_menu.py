@@ -39,12 +39,12 @@ class ConfigurationMenu(QDialog):
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("Symulator Migracji - Menu & Konfiguracja")
+        self.setWindowTitle("Menu")
         self.setMinimumSize(880, 680)
 
         root_layout = QVBoxLayout(self)
 
-        title = QLabel("Ustawienia Symulacji i Odtwarzacz Powtórek")
+        title = QLabel("Symulacja Migracji Gnu - Konfiguracja")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("font-size: 20px; font-weight: bold; margin-top: 5px; margin-bottom: 5px;")
         root_layout.addWidget(title)
@@ -310,9 +310,3 @@ def get_simulation_config():
     if menu.exec() == QDialog.Accepted:
         return menu.config
     return None
-
-
-if __name__ == "__main__":
-    cfg = get_simulation_config()
-    print("Wygenerowany słownik konfiguracji:")
-    print(cfg)

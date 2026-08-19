@@ -5,8 +5,8 @@ import struct
 import time
 
 import numpy as np
+from variables import REPLAYS_DIR
 
-REPLAYS_DIR = "project\\replay\\replays"
 
 def ensure_replays_dir():
     if not os.path.exists(REPLAYS_DIR):
@@ -94,37 +94,3 @@ class SimulationRecorder:
 
         elapsed = time.time() - start_time
         print(f"Zapis ukończony w {elapsed:.2f}s.")
-
-
-class SimulationLoader:
-    def __init__(self, input_filename: str):
-        if not os.path.exists(input_filename) and not input_filename.startswith(REPLAYS_DIR):
-            input_filename = os.path.join(REPLAYS_DIR, input_filename)
-        self.input_filename = input_filename
-
-    def load_all(self):
-        agent_struct = struct.Struct("<HfffBB")
-        agent_size = agent_struct.size
-
-        with gzip.open(self.input_filename, "rb") as f:
-            meta_len = struct.unpack("<I", f.read(4))[0]
-            metadata = pickle.loads(f.read(meta_len))
-
-            total_frames = struct.unpack("<I", f.read(4))[0]
-            frames_data = []
-
-            for _ in range(total_frames):
-                frame_idx, num_agents = struct.unpack("<IH", f.read(6))
-                agents = []
-                
-                for _ in range(num_agents):
-                    a_bytes = f.read(agent_size)
-                    a_id, x, y, angle, a_type, flags = agent_struct.unpack(a_bytes)
-                    agents.append({
-                        "id": a_id, "x": x, "y": y, 
-                        "angle": angle, "type": a_type, "flags": flags
-                    })
-                
-                frames_data.append({"frame": frame_idx, "agents": agents})
-
-        return metadata, frames_data
