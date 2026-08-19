@@ -81,7 +81,7 @@ class ConfigurationMenu(QDialog):
         layout_world = QFormLayout()
 
         self.spin_world_w = QDoubleSpinBox()
-        self.spin_world_w.setRange(1.0, 2.0)
+        self.spin_world_w.setRange(1.0, 4.0)
         self.spin_world_w.setSingleStep(0.1)
 
         self.spin_world_h = QDoubleSpinBox()
@@ -145,7 +145,7 @@ class ConfigurationMenu(QDialog):
         layout_pop = QFormLayout()
 
         self.spin_migrators = QSpinBox()
-        self.spin_migrators.setRange(1, 500)
+        self.spin_migrators.setRange(1, 200)
 
         self.spin_predators = QSpinBox()
         self.spin_predators.setRange(0, 50)
