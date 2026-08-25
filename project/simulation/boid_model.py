@@ -108,6 +108,12 @@ class BoidModel(Model):
                 self.space.place_agent(obstacle, [rx, ry])
                 self.agents.add(obstacle)
 
+    def get_predators(self):
+        return [agent for agent in self.agents if isinstance(agent, Predator)]
+
+    def get_migrators(self):
+        return [agent for agent in self.agents if isinstance(agent, Migrator)]
+
     def step_environment(self):
         self.grass_map = np.clip(
             self.grass_map + self.grass_regrowth_rate, 0.0, 1.0

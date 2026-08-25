@@ -30,7 +30,8 @@ DEFAULTS = {
     "forest_cost": 2.0,
     "mountain_cost": 8.0,
     "grass_regrowth": 0.001,
-    "record_simulation": False
+    "record_simulation": False,
+    "migrator_speed": 3.0,
 }
 
 class ConfigurationMenu(QDialog):
@@ -273,7 +274,7 @@ class ConfigurationMenu(QDialog):
         self.spin_migrators.setValue(DEFAULTS["num_migrators"])
         self.spin_predators.setValue(DEFAULTS["num_predators"])
 
-        self.spin_max_speed.setValue(DEFAULTS["max_speed"])
+        self.spin_max_speed.setValue(DEFAULTS["migrator_speed"])
         self.spin_river_speed_mod.setValue(DEFAULTS["river_speed_mod"])
         self.spin_river_current.setValue(DEFAULTS["river_current"])
         self.spin_hunger_rate.setValue(DEFAULTS["hunger_rate"])
@@ -296,7 +297,7 @@ class ConfigurationMenu(QDialog):
             "num_obstacles": self.spin_obstacles.value(),
             "num_migrators": self.spin_migrators.value(),
             "num_predators": self.spin_predators.value(),
-            "max_speed": self.spin_max_speed.value(),
+            "migrator_speed": self.spin_max_speed.value(),
             "river_speed_mod": self.spin_river_speed_mod.value(),
             "river_current": self.spin_river_current.value(),
             "hunger_rate": self.spin_hunger_rate.value(),

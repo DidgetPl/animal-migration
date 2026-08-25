@@ -7,14 +7,47 @@ from simulation.simulation_recorder import SimulationRecorder
 from variables import SCREEN_H, SCREEN_W
 
 
+def draw_hud(screen, font, model, current_frame, is_paused):
+    status_str = "PAUZA" if is_paused else "SYMULACJA"
+    
+    hud_lines = [
+        f"Stan: {status_str}",
+        f"Klatka: {current_frame:.0f}",
+        f"Liczba migratorów: {len(model.get_migrators())}",
+        f"Liczba drapieżników: {len(model.get_predators())}",
+        "-----------------------------------------",
+        "[SPACJA] Pauza / Wznowienie",
+        "[MYSZ] Przeciąganie i Zoom kamery",
+        "[ESC] Wyjście do menu"
+    ]
+
+    padding = 10
+    line_height = 22
+    box_w = 460
+    box_h = len(hud_lines) * line_height + padding * 2
+
+    hud_surface = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
+    hud_surface.fill((0, 0, 0, 180))
+    screen.blit(hud_surface, (10, 10))
+
+    for i, line in enumerate(hud_lines):
+        color = (255, 215, 0) if i == 0 else (220, 220, 220)
+
+        txt = font.render(line, True, color)
+        screen.blit(txt, (10 + padding, 10 + padding + i * line_height))
+
+
 def run_live_simulation(config):
     world_w = int(SCREEN_W * config["world_w_mult"])
     world_h = int(SCREEN_H * config["world_h_mult"])
 
     pygame.init()
+    pygame.font.init()
+
     screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
     pygame.display.set_caption("Symulacja Migracji Gnu")
     clock = pygame.time.Clock()
+    font = pygame.font.SysFont("Consolas", 14, bold=True)
 
     recorder = None
     if config.get("record_simulation", False):
@@ -35,7 +68,7 @@ def run_live_simulation(config):
         num_obstacles=config["num_obstacles"],
         migrator_speed=config["migrator_speed"],
         river_speed_mod=config["river_speed_mod"],
-        river_stream=config["river_stream"],
+        river_stream=config["river_current"],
         hunger_rate=config["hunger_rate"]
     )
 
@@ -47,6 +80,7 @@ def run_live_simulation(config):
 
     frame_count = 0
     running = True
+    is_paused = False
 
     while running:
         for event in pygame.event.get():
@@ -55,18 +89,23 @@ def run_live_simulation(config):
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     running = False
+                elif event.key == pygame.K_SPACE:
+                    is_paused = not is_paused
             else:
                 camera.handle_event(event)
 
-        model.step()
+        if not is_paused:
+            model.step()
 
-        if recorder:
-            recorder.capture_frame(frame_count, model.agents)
+            if recorder:
+                recorder.capture_frame(frame_count, model.agents)
+
+            frame_count += 1
 
         renderer.render(screen, model, camera.x, camera.y, camera.zoom)
-        pygame.display.flip()
+        draw_hud(screen, font, model, frame_count, is_paused)
 
-        frame_count += 1
+        pygame.display.flip()
         clock.tick(60)
 
     if recorder:
