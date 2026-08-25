@@ -21,13 +21,14 @@ DEFAULTS = {
     "enable_river": True,
     "num_obstacles": 120,
     "num_migrators": 80,
-    "num_predators": 3,
+    "num_predators": 8,
     "max_speed": 3.0,
     "river_speed_mod": 0.3,
     "river_current": 0.02,
     "hunger_rate": 0.035,
     "river_cost": 3.0,
     "forest_cost": 2.0,
+    "mountain_cost": 8.0,
     "grass_regrowth": 0.001,
     "record_simulation": False
 }
@@ -53,7 +54,7 @@ class ConfigurationMenu(QDialog):
         layout_replay = QHBoxLayout()
 
         self.combo_replays = QComboBox()
-        self.btn_refresh_replays = QPushButton("🔄 Odśwież")
+        self.btn_refresh_replays = QPushButton("Odśwież")
         self.btn_refresh_replays.clicked.connect(self.refresh_replays)
 
         self.btn_start_replay = QPushButton("▶ Odtwórz Wybraną Powtórkę")
@@ -127,12 +128,17 @@ class ConfigurationMenu(QDialog):
         self.spin_forest_cost.setRange(1.0, 10.0)
         self.spin_forest_cost.setSingleStep(0.5)
 
+        self.spin_mountain_cost = QDoubleSpinBox()
+        self.spin_mountain_cost.setRange(1.0, 10.0)
+        self.spin_mountain_cost.setSingleStep(0.5)
+
         self.spin_grass_regrowth = QDoubleSpinBox()
         self.spin_grass_regrowth.setRange(0.0001, 0.01)
         self.spin_grass_regrowth.setDecimals(4)
 
         layout_costs.addRow("Opór rzeki:", self.spin_river_cost)
         layout_costs.addRow("Opór lasu:", self.spin_forest_cost)
+        layout_costs.addRow("Opór góry:", self.spin_mountain_cost)
         layout_costs.addRow("Szybkość odrastania trawy:", self.spin_grass_regrowth)
         group_costs.setLayout(layout_costs)
         left_column.addWidget(group_costs)
@@ -171,8 +177,8 @@ class ConfigurationMenu(QDialog):
         self.spin_river_current.setDecimals(3)
         self.spin_river_current.setSingleStep(0.005)
 
-        layout_movement.addRow("Max prędkość migratora:", self.spin_max_speed)
-        layout_movement.addRow("Modyfikator prędkości w rzece:", self.spin_river_speed_mod)
+        layout_movement.addRow("Maks. szybkość migratora:", self.spin_max_speed)
+        layout_movement.addRow("Modyfikator szybkości w rzece:", self.spin_river_speed_mod)
         layout_movement.addRow("Siła prądu rzeki:", self.spin_river_current)
         group_movement.setLayout(layout_movement)
         right_column.addWidget(group_movement)
@@ -274,6 +280,7 @@ class ConfigurationMenu(QDialog):
 
         self.spin_river_cost.setValue(DEFAULTS["river_cost"])
         self.spin_forest_cost.setValue(DEFAULTS["forest_cost"])
+        self.spin_mountain_cost.setValue(DEFAULTS["mountain_cost"])
         self.spin_grass_regrowth.setValue(DEFAULTS["grass_regrowth"])
 
         self.chk_record_sim.setChecked(DEFAULTS["record_simulation"])
@@ -295,6 +302,7 @@ class ConfigurationMenu(QDialog):
             "hunger_rate": self.spin_hunger_rate.value(),
             "river_cost": self.spin_river_cost.value(),
             "forest_cost": self.spin_forest_cost.value(),
+            "mountain_cost": self.spin_mountain_cost.value(),
             "grass_regrowth": self.spin_grass_regrowth.value(),
             "record_simulation": self.chk_record_sim.isChecked()
         }

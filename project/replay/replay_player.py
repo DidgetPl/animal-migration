@@ -79,7 +79,7 @@ def run_replay(filename):
     pygame.init()
     pygame.font.init()
     screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
-    pygame.display.set_caption("Odtwarzacz Powtórek Symulacji - Kontrola Czasu")
+    pygame.display.set_caption("Powtórka")
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("Consolas", 14, bold=True)
 

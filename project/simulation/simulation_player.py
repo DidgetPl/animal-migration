@@ -25,13 +25,18 @@ def run_live_simulation(config):
         num_predators=config["num_predators"],
         river_cost=config["river_cost"],
         forest_cost=config["forest_cost"],
+        mountain_cost=config["mountain_cost"],
         grass_regrowth=config["grass_regrowth"],
         width=world_w,
         height=world_h,
         mountain_threshold=config["mountain_threshold"],
         forest_threshold=config["forest_threshold"],
         enable_river=config["enable_river"],
-        num_obstacles=config["num_obstacles"]
+        num_obstacles=config["num_obstacles"],
+        migrator_speed=config["migrator_speed"],
+        river_speed_mod=config["river_speed_mod"],
+        river_stream=config["river_stream"],
+        hunger_rate=config["hunger_rate"]
     )
 
     if recorder:

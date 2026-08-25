@@ -10,7 +10,7 @@ from variables import GRID_SIZE
 
 
 class BoidModel(Model):
-    def __init__(self, num_migrators, num_predators, width, height, river_cost=3.0, forest_cost=2.0,
+    def __init__(self, num_migrators, num_predators, width, height, river_cost=3.0, forest_cost=2.0, mountain_cost=8.0,
                 grass_regrowth=0.001, num_obstacles=120, mountain_threshold=0.56, forest_threshold=0.28,
                 enable_river=True, migrator_speed=3.0, river_speed_mod=0.3, river_stream=0.02, hunger_rate=0.035):
         super().__init__()
@@ -57,7 +57,7 @@ class BoidModel(Model):
                 if self.river_map[i][j]:
                     self.terrain_cost_map[i][j] = river_cost
                 elif val > self.mountain_threshold:
-                    self.terrain_cost_map[i][j] = 8.0
+                    self.terrain_cost_map[i][j] = mountain_cost
                 elif val > self.forest_threshold:
                     self.terrain_cost_map[i][j] = forest_cost
                 else:
