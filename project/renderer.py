@@ -21,12 +21,14 @@ TREE_INTERIOR_COLOR = (101, 110, 12)
 TREE_OUTLINE_COLOR = (64, 72, 8)
 ROCK_INTERIOR_COLOR = (80, 80, 85)
 ROCK_OUTLINE_COLOR = (50, 50, 55)
+FLOW_ARROW_COLOR = (240, 240, 255, 120)
 
 class WorldRenderer:
     def __init__(self, screen_w, screen_h, flip=True):
         self.screen_w = screen_w
         self.screen_h = screen_h
         self.flip = flip
+        self.overlay_surface = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
 
     def world_to_screen(self, pos, cam_x, cam_y, zoom):
         sx = (pos[0] - cam_x) * zoom
@@ -83,7 +85,58 @@ class WorldRenderer:
                 )
                 pygame.draw.rect(screen, color, rect)
 
-    def draw_agents_and_obstacles(self, screen, model, cam_x, cam_y, zoom):
+    def draw_flow_field(self, screen, model, cam_x, cam_y, zoom):
+        if not hasattr(model, 'flow_field') or model.flow_field is None:
+            return
+
+        self.overlay_surface.fill((0, 0, 0, 0))
+
+        start_col = max(0, int(cam_x // GRID_SIZE))
+        end_col = min(model.cols, int((cam_x + self.screen_w / zoom) // GRID_SIZE) + 2)
+        start_row = max(0, int(cam_y // GRID_SIZE))
+        end_row = min(model.rows, int((cam_y + self.screen_h / zoom) // GRID_SIZE) + 2)
+
+        for r in range(start_row, end_row):
+            for c in range(start_col, end_col):
+                world_x = (c + 0.5) * GRID_SIZE
+                world_y = (r + 0.5) * GRID_SIZE
+                
+                force = model.flow_field.get_force_at((world_x, world_y))
+                norm = np.linalg.norm(force)
+                if norm == 0:
+                    continue
+
+                angle = np.arctan2(force[1], force[0])
+                center_sx, center_sy = self.world_to_screen((world_x, world_y), cam_x, cam_y, zoom)
+
+                arrow_len = (GRID_SIZE * 0.4) * zoom
+                head_len = arrow_len * 0.35
+
+                start_p = (
+                    int(center_sx - np.cos(angle) * (arrow_len * 0.5)),
+                    int(center_sy - np.sin(angle) * (arrow_len * 0.5))
+                )
+                end_p = (
+                    int(center_sx + np.cos(angle) * (arrow_len * 0.5)),
+                    int(center_sy + np.sin(angle) * (arrow_len * 0.5))
+                )
+
+                pygame.draw.line(self.overlay_surface, FLOW_ARROW_COLOR, start_p, end_p, width=max(1, int(2 * zoom)))
+
+                left_wing = (
+                    int(end_p[0] - head_len * np.cos(angle - 0.5)),
+                    int(end_p[1] - head_len * np.sin(angle - 0.5))
+                )
+                right_wing = (
+                    int(end_p[0] - head_len * np.cos(angle + 0.5)),
+                    int(end_p[1] - head_len * np.sin(angle + 0.5))
+                )
+                pygame.draw.line(self.overlay_surface, FLOW_ARROW_COLOR, end_p, left_wing, width=max(1, int(2 * zoom)))
+                pygame.draw.line(self.overlay_surface, FLOW_ARROW_COLOR, end_p, right_wing, width=max(1, int(2 * zoom)))
+
+        screen.blit(self.overlay_surface, (0, 0))
+
+    def draw_agents(self, screen, model, cam_x, cam_y, zoom):
         for agent in model.agents:
             if agent.pos is None:
                 continue
@@ -130,9 +183,13 @@ class WorldRenderer:
                     p3 = (rx + np.cos(angle - 2.3) * p_size / 2, ry + np.sin(angle - 2.3) * p_size / 2)
                     pygame.draw.polygon(screen, PREDATOR_COLOR, [p1, p2, p3])
 
-    def render(self, screen, model, cam_x, cam_y, zoom):
+    def render(self, screen, model, cam_x, cam_y, zoom, show_flow_field=False):
         screen.fill((20, 20, 25))
         self.draw_terrain(screen, model, cam_x, cam_y, zoom)
-        self.draw_agents_and_obstacles(screen, model, cam_x, cam_y, zoom)
+        
+        if show_flow_field:
+            self.draw_flow_field(screen, model, cam_x, cam_y, zoom)
+
+        self.draw_agents(screen, model, cam_x, cam_y, zoom)
         if self.flip:
             pygame.display.flip()

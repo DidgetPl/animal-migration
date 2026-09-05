@@ -16,6 +16,7 @@ def draw_hud(screen, font, model, current_frame, is_paused):
         f"Liczba migratorów: {len(model.get_migrators())}",
         f"Liczba drapieżników: {len(model.get_predators())}",
         "-----------------------------------------",
+        "[F] Pokaż pole przepływu",
         "[SPACJA] Pauza / Wznowienie",
         "[MYSZ] Przeciąganie i Zoom kamery",
         "[ESC] Wyjście do menu"
@@ -102,7 +103,9 @@ def run_live_simulation(config):
 
             frame_count += 1
 
-        renderer.render(screen, model, camera.x, camera.y, camera.zoom)
+        show_flow_field = pygame.key.get_pressed()[pygame.K_f]
+
+        renderer.render(screen, model, camera.x, camera.y, camera.zoom, show_flow_field=show_flow_field)
         draw_hud(screen, font, model, frame_count, is_paused)
 
         pygame.display.flip()
